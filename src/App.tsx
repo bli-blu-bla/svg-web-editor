@@ -94,7 +94,7 @@ function Toolbar() {
 
   return (
     <header className="topbar">
-      <div className="brand"><img className="logo" src="/logo.svg" width={24} height={24} alt="" /> SVG Editor</div>
+      <div className="brand"><img className="logo" src={`${import.meta.env.BASE_URL}logo.svg`} width={24} height={24} alt="" /> SVG Editor</div>
       <div className="tgroup">
         <IconBtn title="Neues Dokument" icon={<FilePlus2 size={17} />} onClick={A.newDocument} />
         <IconBtn title="SVG öffnen (⌘O) – oder Datei auf die Fläche ziehen" icon={<FolderOpen size={17} />} onClick={() => fileRef.current?.click()} />
