@@ -55,7 +55,12 @@ export function NumField({ value, onCommit, label, step = 1, suffix, disabled, t
           if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && value !== null) {
             e.preventDefault();
             const d = (e.key === 'ArrowUp' ? 1 : -1) * step * (e.shiftKey ? 10 : 1);
-            onCommit(+(value + d).toFixed(6));
+            // step from what is typed in the field, not just from the last committed value
+            const typed = Number(text.replace(',', '.'));
+            const next = +((text.trim() && isFinite(typed) ? typed : value) + d).toFixed(6);
+            // the field doesn't follow `value` while focused, so update its text directly
+            setText(fmt(next, precision));
+            onCommit(next);
           }
         }}
       />
