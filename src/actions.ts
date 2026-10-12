@@ -216,6 +216,11 @@ export function expandStroke() {
   if (!ids.length) return st().notify('Zuerst Elemente auswählen');
   edit('Kontur in Fläche umwandeln', (doc) => ops.expandStrokeOp(doc, ids, ctx().prec));
 }
+export function centerline() {
+  const ids = st().selection;
+  if (!ids.length) return st().notify('Zuerst Elemente auswählen');
+  edit('Mittellinie erzeugen', (doc) => ops.centerlineOp(doc, ids, ctx().prec));
+}
 export function setProps(props: Record<string, string | null>, label: string, key?: string) {
   const s = st();
   const ids = s.selection.length ? s.selection : [];

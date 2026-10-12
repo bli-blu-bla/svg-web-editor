@@ -238,6 +238,7 @@ export function PathTab() {
       <div className="card plain">
         <div className="sub">Umwandeln</div>
         <button className="btn list" onClick={A.expandStroke}>Kontur in Fläche</button>
+        <button className="btn list" title="Mittellinie der Form als neuen Pfad erzeugen" onClick={A.centerline}>Mittellinie erzeugen</button>
         <button className="btn list" onClick={A.convertToPath}>In Pfad umwandeln</button>
         <button className="btn list" onClick={A.applyTransforms}>Transformationen anwenden</button>
         <button className="btn list" disabled={els.length !== 1} onClick={A.editSelectedNodes}>Knoten bearbeiten<kbd>Enter</kbd></button>

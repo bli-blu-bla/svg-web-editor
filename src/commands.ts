@@ -64,6 +64,7 @@ export function commands(): Command[] {
     { id: 'offset-out', group: 'Pfad', label: 'Offset nach außen', terms: 'vergrößern rand kontur', hint: off, when: sel, run: () => A.offsetSelection(st().settings.offsetDistance) },
     { id: 'offset-in', group: 'Pfad', label: 'Offset nach innen', terms: 'verkleinern', hint: off, when: sel, run: () => A.offsetSelection(-st().settings.offsetDistance) },
     { id: 'expand-stroke', group: 'Pfad', label: 'Kontur in Fläche umwandeln', terms: 'stroke outline', when: sel, run: A.expandStroke },
+    { id: 'centerline', group: 'Pfad', label: 'Mittellinie erzeugen', terms: 'centerline skelett achse mitte linie medial', when: sel, run: A.centerline },
     { id: 'to-path', group: 'Pfad', label: 'In Pfad umwandeln', when: sel, run: A.convertToPath },
     { id: 'apply-transforms', group: 'Pfad', label: 'Transformationen anwenden', when: sel, run: A.applyTransforms },
     { id: 'round', group: 'Pfad', label: 'Ecken abrunden', hint: () => `Radius ${st().settings.cornerRadius}`, when: sel, run: () => A.roundSelectedCorners() },

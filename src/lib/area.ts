@@ -4,7 +4,7 @@ import { apply, fmt, type Mat } from './matrix';
 import { flatten, parsePath, toCurves } from './path';
 import type { CapKind, JoinKind } from './offset';
 
-const SCALE = 1000;
+export const SCALE = 1000;
 export type CPath = { X: number; Y: number }[];
 export type CPaths = CPath[];
 export type BoolOp = 'union' | 'subtract' | 'intersect' | 'exclude';

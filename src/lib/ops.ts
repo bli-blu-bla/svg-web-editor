@@ -1,8 +1,9 @@
 import { det, inv, isAxisAligned, isIdentity, isSimilarity, matrixToString, mul, mulAll, fmt, apply, transformBox, type Mat } from './matrix';
-import { elementPathData, parsePath, parsePoints, serializePath, transformPath } from './path';
+import { elementPathData, parsePath, parsePoints, serializePath, transformPath, type P2 } from './path';
 import { curveOffset, strokeOutline, type CapKind, type JoinKind } from './offset';
 import { roundCorners, type ShapeSpec } from './shapes';
-import { areaToD, booleanAreas, offsetArea, shapeArea, unionAll, type BoolOp, type CPaths, type ShapeStyle } from './area';
+import { areaToD, booleanAreas, offsetArea, SCALE, shapeArea, unionAll, type BoolOp, type CPaths, type ShapeStyle } from './area';
+import { centerline, type CenterLine } from './centerline';
 import {
   COLOR_PROPS, SHAPES, SVGNS, effProp, elsOf, getEl, idOf, kids, localMatrix, normalizeColor,
   ownProp, parentMatrix, parseSvg, setProp, topmost,
@@ -452,6 +453,55 @@ export function expandStrokeOp(doc: Document, ids: string[], prec: number): stri
       }
     }
   }
+  return track(res)();
+}
+
+/** Path data of fitted centerlines (root coordinates) mapped with m; arcs stay arcs under similarity transforms */
+function centerlineD(lines: CenterLine[], m: Mat, prec: number): string {
+  const pt = ([x, y]: P2) => { const r = apply(m, x, y); return `${fmt(r.x, prec)} ${fmt(r.y, prec)}`; };
+  const sim = isSimilarity(m), scale = Math.sqrt(Math.abs(det(m))), flip = det(m) < 0;
+  return lines.map(({ prims, closed }) => {
+    let d = 'M' + pt(prims[0].a);
+    for (const p of prims) {
+      if (p.kind === 'L') { d += 'L' + pt(p.b); continue; }
+      const a0 = Math.atan2(p.a[1] - p.c[1], p.a[0] - p.c[0]);
+      let sw = (Math.atan2(p.b[1] - p.c[1], p.b[0] - p.c[0]) - a0) * p.dir;
+      while (sw < 0) sw += 2 * Math.PI;
+      if (sim) {
+        const dir = flip ? -p.dir : p.dir;
+        d += `A${fmt(p.r * scale, prec)} ${fmt(p.r * scale, prec)} 0 ${sw > Math.PI ? 1 : 0} ${dir > 0 ? 1 : 0} ${pt(p.b)}`;
+      } else {
+        const k = Math.max(2, Math.ceil(sw / (Math.PI / 32)));
+        for (let i = 1; i <= k; i++) {
+          const a = a0 + (sw * p.dir * i) / k;
+          d += 'L' + (i === k ? pt(p.b) : pt([p.c[0] + p.r * Math.cos(a), p.c[1] + p.r * Math.sin(a)]));
+        }
+      }
+    }
+    return closed ? d + 'Z' : d;
+  }).join('');
+}
+
+/** Centerline of each selected element's visible area as a new stroked path above it */
+export function centerlineOp(doc: Document, ids: string[], prec: number): string[] {
+  const res: Element[] = [];
+  for (const el of topmost(elsOf(doc, ids))) {
+    const area = elementArea(el);
+    if (!area.length) continue;
+    const { lines, radius } = centerline(area.map((p) => p.map((q): [number, number] => [q.X / SCALE, q.Y / SCALE])));
+    if (!lines.length) continue;
+    const m = inv(parentMatrix(el));
+    const d = centerlineD(lines, m, prec);
+    const p = doc.createElementNS(SVGNS, 'path');
+    p.setAttribute('d', d);
+    p.setAttribute('fill', 'none');
+    p.setAttribute('stroke', areaPaint(el).color);
+    p.setAttribute('stroke-width', fmt(2 * radius * Math.sqrt(Math.abs(det(m))), prec));
+    p.setAttribute('stroke-linejoin', 'round');
+    el.after(p);
+    res.push(p);
+  }
+  if (!res.length) throw new Error('Keine Mittellinie gefunden (Form zu klein oder ohne Fläche)');
   return track(res)();
 }
 
