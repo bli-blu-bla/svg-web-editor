@@ -1,12 +1,12 @@
 import { useStore } from './store';
-import { mulAll, rotateAt, scaleAt, translate, unionBoxes, type Box, type Mat } from './lib/matrix';
+import { inv as invMat, mulAll, rotateAt, scaleAt, translate, unionBoxes, type Box, type Mat, type Pt } from './lib/matrix';
 import * as ops from './lib/ops';
 import { cleanSvgString, getEl, isSelectable, kids, parseSvg, serialize, idOf, docSize, prettyPrint, SVGNS } from './lib/svg';
 import { minify } from './lib/minify';
 import type { BoolOp } from './lib/area';
+import { deleteNode, fromNodes, nodeKind, setNodeKind, toNodes, type NodeKind, type NodeRef, type PNode, type SubPath } from './lib/nodes';
 import { shapeSpec, SHAPE_LABELS, type ShapeKind } from './lib/shapes';
-import type { Pt } from './lib/matrix';
-import { rootBBox } from './lib/live';
+import { elToRoot, liveEl, rootBBox } from './lib/live';
 
 const st = () => useStore.getState();
 export const ctx = (): ops.Ctx => {
@@ -327,4 +327,98 @@ export function roundSelectedCorners(radius = st().settings.cornerRadius) {
   const ids = st().selection;
   if (!ids.length) return st().notify('Zuerst Elemente auswählen');
   edit(radius > 0 ? `Ecken abrunden ${radius}` : 'Ecken eckig', (doc) => ops.roundCornersOp(doc, ids, radius, ctx().prec));
+}
+
+// ---------- path nodes ----------
+/** Run fn on the node model of the path being edited and write it back */
+export function editNodes(label: string, fn: (subs: SubPath[]) => NodeRef | null | undefined, key?: string) {
+  const s = st();
+  const id = s.nodeEdit;
+  if (!id) return;
+  let sel: NodeRef | null | undefined;
+  let empty = false;
+  edit(label, (doc) => {
+    const el = getEl(doc, id);
+    if (!el) return;
+    const subs = toNodes(el.getAttribute('d'));
+    sel = fn(subs);
+    if (!subs.length) { el.remove(); empty = true; return []; }
+    el.setAttribute('d', fromNodes(subs, s.settings.precision));
+  }, { key });
+  if (empty) st().set({ nodeEdit: null, nodeSel: null });
+  else if (sel !== undefined) st().set({ nodeSel: sel });
+}
+
+export const NODE_LABELS: Record<NodeKind, string> = { corner: 'Ecke', smooth: 'Glatt', symmetric: 'Symmetrisch' };
+
+const smoothKey = (ref: NodeRef) => `${st().nodeEdit}|${ref.s}:${ref.j}`;
+
+/** Node kind as shown to the user: derived from the geometry, plus the explicit smooth flag */
+export function effNodeKind(n: PNode, ref: NodeRef, smooth = st().smoothNodes): NodeKind {
+  const k = nodeKind(n);
+  return k === 'symmetric' && smooth.includes(smoothKey(ref)) ? 'smooth' : k;
+}
+
+function markSmooth(refs: NodeRef[], on: boolean) {
+  const keys = refs.map(smoothKey);
+  const rest = st().smoothNodes.filter((k) => !keys.includes(k));
+  st().set({ smoothNodes: on ? [...rest, ...keys] : rest });
+}
+
+/** Node indices shift after inserting or deleting – drop the smooth flags */
+export const resetSmoothNodes = () => { if (st().smoothNodes.length) st().set({ smoothNodes: [] }); };
+
+export function setSelectedNodeKind(kind: NodeKind, ref = st().nodeSel) {
+  if (!ref) return st().notify('Zuerst einen Knoten anklicken');
+  editNodes(`Knoten: ${NODE_LABELS[kind]}`, (subs) => { setNodeKind(subs, ref, kind); return ref; });
+  markSmooth([ref], kind === 'smooth');
+}
+
+/** Double-click on a node: corner ↔ smooth */
+export function toggleNodeKind(ref: NodeRef) {
+  let toSmooth = false;
+  editNodes('Knotentyp', (subs) => {
+    const n = subs[ref.s]?.nodes[ref.j];
+    toSmooth = !!n && nodeKind(n) === 'corner';
+    if (n) setNodeKind(subs, ref, toSmooth ? 'smooth' : 'corner');
+    return ref;
+  });
+  markSmooth([ref], toSmooth);
+}
+
+export function deleteSelectedNode() {
+  const ref = st().nodeSel;
+  if (!ref) return;
+  editNodes('Knoten löschen', (subs) => { deleteNode(subs, ref); return null; });
+  resetSmoothNodes();
+}
+
+/** Move the selected node by a root-space delta */
+export function nudgeNode(dx: number, dy: number) {
+  const s = st();
+  const ref = s.nodeSel;
+  if (!ref || !s.nodeEdit) return;
+  const el = liveEl(s.nodeEdit);
+  const m = el && elToRoot(el);
+  const iv = m ? invMat(m) : ([1, 0, 0, 1, 0, 0] as const);
+  const lx = iv[0] * dx + iv[2] * dy, ly = iv[1] * dx + iv[3] * dy;
+  editNodes('Knoten verschieben', (subs) => {
+    const n = subs[ref.s]?.nodes[ref.j];
+    if (!n) return ref;
+    n.x += lx; n.y += ly;
+    if (n.hin) { n.hin.x += lx; n.hin.y += ly; }
+    if (n.hout) { n.hout.x += lx; n.hout.y += ly; }
+    return ref;
+  }, 'node-nudge');
+}
+
+export function setAllNodesKind(kind: NodeKind) {
+  let refs: NodeRef[] = [];
+  editNodes(`Alle Knoten: ${NODE_LABELS[kind]}`, (subs) => {
+    refs = subs.flatMap((sp, s) => sp.nodes.map((_, j) => ({ s, j })));
+    refs.forEach((r) => setNodeKind(subs, r, kind));
+    return st().nodeSel;
+  });
+  resetSmoothNodes();
+  if (kind === 'smooth') markSmooth(refs, true);
 }

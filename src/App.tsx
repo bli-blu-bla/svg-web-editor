@@ -38,13 +38,15 @@ function useShortcuts() {
       else if (mod && k === '0') { stop(); A.fitView(); }
       else if (mod && k === '1') { stop(); A.zoomTo(1); }
       else if (mod) return;
-      else if (k === 'backspace' || k === 'delete') { stop(); A.deleteSelection(); }
+      else if (k === 'backspace' || k === 'delete') { stop(); if (s.nodeEdit && s.nodeSel) A.deleteSelectedNode(); else if (!s.nodeEdit) A.deleteSelection(); }
       else if (k.startsWith('arrow')) {
         stop();
         const d = e.shiftKey ? 10 : (e.altKey ? 0.1 : 1);
-        A.nudge(k === 'arrowleft' ? -d : k === 'arrowright' ? d : 0, k === 'arrowup' ? -d : k === 'arrowdown' ? d : 0);
+        const dx = k === 'arrowleft' ? -d : k === 'arrowright' ? d : 0, dy = k === 'arrowup' ? -d : k === 'arrowdown' ? d : 0;
+        if (s.nodeEdit) { if (s.nodeSel) A.nudgeNode(dx, dy); } else A.nudge(dx, dy);
       } else if (k === 'escape') {
-        if (s.nodeEdit) s.set({ nodeEdit: null });
+        if (s.nodeEdit && s.nodeSel) s.set({ nodeSel: null });
+        else if (s.nodeEdit) s.set({ nodeEdit: null });
         else if (s.selection.length) s.select([]);
         else if (s.scope) s.set({ scope: '' });
         if (s.tool !== 'select') s.set({ tool: 'select' });

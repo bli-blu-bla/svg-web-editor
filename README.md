@@ -14,7 +14,7 @@ Built with React, TypeScript and Vite. Everything runs locally in the browser, n
 - Numeric X / Y / width / height with a 9-point **reference point** (top left … center … bottom right), scale in %, rotate, flip
 - Align and distribute, arrange (front/back), group / ungroup, duplicate, copy / cut / paste
 - Transforms are written straight into the geometry (path data, `x`/`y`, `cx`/`cy`, …) instead of piling up `transform` attributes — optional, with stroke-width scaling
-- Node editing for paths: drag anchors and control points
+- Node editing for paths: drag anchors and control points, switch nodes between corner / smooth / symmetric, add nodes by double-clicking the outline, delete with `⌫`
 - Undo / redo with a clickable history
 
 **Shapes**

@@ -300,3 +300,18 @@ code, kbd, .mono { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, 
 .shape-hint { grid-column: 1 / -1; color: var(--faint); font-size: 11.5px; padding: 6px 4px 2px; }
 .shape-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; }
 .shape-grid .iconbtn { min-width: 0; }
+.ov-anchor.smooth { stroke-width: 1.5; }
+.nk { display: inline-flex; align-items: center; gap: 3px; min-width: 0; max-width: 100%; white-space: nowrap; font-size: 11.5px; }
+.nk svg { flex: none; width: 15px; }
+.nk-t { overflow: hidden; text-overflow: ellipsis; }
+.segmented button { min-width: 0; overflow: hidden; padding: 0 4px; }
+.scope-pill { white-space: normal; max-width: min(720px, 80vw); text-align: center; }
+.panel-body { overflow-x: hidden; }
+.sub.sep { border-top: 1px solid var(--border-soft); padding-top: 10px; margin-top: 4px; }
+.inactive { opacity: .4; pointer-events: none; }
+.btn.danger:hover:not(:disabled) { background: rgba(240,113,120,.15); color: var(--danger); }
+.select {
+  height: 30px; background: var(--field); border: 1px solid transparent; border-radius: 7px; color: var(--text);
+  padding: 0 8px; font-size: 12.5px; outline: 0; cursor: pointer; min-width: 0; width: 100%;
+}
+.select:focus { border-color: var(--accent); }

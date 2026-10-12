@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../store';
 import { SHAPE_LABELS } from '../lib/shapes';
+import { toNodes, type NodeKind } from '../lib/nodes';
 import { ShapeIcon, SHAPE_ORDER } from './ShapePicker';
 import * as A from '../actions';
 import { docSize, effProp, getEl, idOf, isSelectable, kids, listColors, ownProp, toHex, tryParse } from '../lib/svg';
@@ -27,6 +28,7 @@ export function Properties() {
   const union = useStore((s) => s.geo.union);
   const settings = useStore((s) => s.settings);
   const tool = useStore((s) => s.tool);
+  const nodeEdit = useStore((s) => s.nodeEdit);
   const setSettings = useStore((s) => s.setSettings);
   const [scalePct, setScalePct] = useState(100);
   const [rot, setRot] = useState(15);
@@ -53,6 +55,7 @@ export function Properties() {
       </div>
 
       {tool === 'shape' && <ShapeSection />}
+      {nodeEdit && <NodeSection doc={doc} id={nodeEdit} />}
 
       {has && union && (
         <Section title="Dimensionen">
@@ -317,6 +320,53 @@ function ColorsSection({ doc }: { doc: Document }) {
         ))}
       </div>
     </Section>
+  );
+}
+
+function NodeSection({ doc, id }: { doc: Document; id: string }) {
+  const nodeSel = useStore((s) => s.nodeSel);
+  const smoothNodes = useStore((s) => s.smoothNodes);
+  const el = getEl(doc, id);
+  const subs = useMemo(() => toNodes(el?.getAttribute('d') ?? ''), [el]);
+  const node = nodeSel ? subs[nodeSel.s]?.nodes[nodeSel.j] : null;
+  const kind = node ? A.effNodeKind(node, nodeSel!, smoothNodes) : null;
+  const total = subs.reduce((n, sp) => n + sp.nodes.length, 0);
+  const opts = (['corner', 'smooth', 'symmetric'] as const).map((k) => ({
+    value: k, label: <span className="nk"><NodeKindIcon kind={k} /><span className="nk-t">{A.NODE_LABELS[k]}</span></span>, title: A.NODE_LABELS[k],
+  }));
+  return (
+    <Section title="Knoten">
+      <div className="hint">
+        {node ? `Knoten ${nodeSel!.j + 1}${subs.length > 1 ? ` (Teilpfad ${nodeSel!.s + 1})` : ''} · x ${+node.x.toFixed(2)}, y ${+node.y.toFixed(2)}` : `${total} Knoten – einen Knoten anklicken`}
+      </div>
+      <div className="sub">Ausgewählter Knoten</div>
+      <div className={node ? '' : 'inactive'}>
+        <Segmented value={kind} options={opts} onChange={(k) => node && A.setSelectedNodeKind(k)} />
+      </div>
+      <button className="btn wide danger" disabled={!node} title="Knoten löschen (Entf)" onClick={A.deleteSelectedNode}><Trash2 size={14} /> Knoten löschen</button>
+      <div className="sub sep">Ganzer Pfad</div>
+      <select className="select" value="" title="Typ aller Knoten des Pfads auf einmal ändern"
+        onChange={(e) => { const k = e.target.value as NodeKind; if (k) A.setAllNodesKind(k); e.target.value = ''; }}>
+        <option value="" disabled>Alle {total} Knoten umwandeln in …</option>
+        {(['corner', 'smooth', 'symmetric'] as const).map((k) => <option key={k} value={k}>{A.NODE_LABELS[k]}</option>)}
+      </select>
+      <div className="hint">Doppelklick auf Knoten = Ecke ↔ Glatt · Doppelklick auf die Kontur = Knoten einfügen · ⌥ beim Ziehen eines Anfassers löst ihn vom Gegenstück</div>
+    </Section>
+  );
+}
+
+function NodeKindIcon({ kind }: { kind: 'corner' | 'smooth' | 'symmetric' }) {
+  return (
+    <svg width="18" height="16" viewBox="0 0 18 16">
+      {kind === 'corner'
+        ? <><path d="M2 14L9 4L16 14" fill="none" stroke="currentColor" strokeWidth="1.5" /><rect x="7" y="2" width="4" height="4" fill="currentColor" /></>
+        : <>
+          <path d="M2 14C3 7 6 5 9 5S15 7 16 14" fill="none" stroke="currentColor" strokeWidth="1.5" />
+          <line x1={kind === 'symmetric' ? 4 : 5.5} y1="5" x2={kind === 'symmetric' ? 14 : 16} y2="5" stroke="currentColor" strokeWidth="1" opacity=".7" />
+          <circle cx="9" cy="5" r="2.2" fill="currentColor" />
+          <circle cx={kind === 'symmetric' ? 4 : 5.5} cy="5" r="1.4" fill="currentColor" /><circle cx={kind === 'symmetric' ? 14 : 16} cy="5" r="1.4" fill="currentColor" />
+        </>}
+    </svg>
   );
 }
 

@@ -4,6 +4,7 @@ import { SAMPLE } from './lib/sample';
 import { getEl, tryParse } from './lib/svg';
 import type { JoinKind } from './lib/offset';
 import type { ShapeKind } from './lib/shapes';
+import type { NodeRef } from './lib/nodes';
 
 export interface Entry { svg: string; label: string; time: number; key?: string }
 export type Tool = 'select' | 'node' | 'pan' | 'shape';
@@ -46,6 +47,10 @@ interface State {
   selection: string[];
   scope: string;
   nodeEdit: string | null;
+  /** selected node while editing a path */
+  nodeSel: NodeRef | null;
+  /** nodes explicitly set to smooth ("pathId|s:j") – geometry alone reads equal-length handles as symmetric */
+  smoothNodes: string[];
   hoverId: string | null;
   tool: Tool;
   zoom: number;
@@ -108,6 +113,8 @@ export const useStore = create<State>((set, get) => ({
   selection: [],
   scope: '',
   nodeEdit: null,
+  nodeSel: null,
+  smoothNodes: [],
   hoverId: null,
   tool: 'select',
   zoom: 1,
@@ -133,7 +140,7 @@ export const useStore = create<State>((set, get) => ({
     }
     persist(svg);
     const nodeEdit = s.nodeEdit && selection.includes(s.nodeEdit) ? s.nodeEdit : null;
-    set({ history, index: history.length - 1, svg, selection, nodeEdit });
+    set({ history, index: history.length - 1, svg, selection, nodeEdit, nodeSel: nodeEdit ? s.nodeSel : null });
   },
   undo: () => { const s = get(); if (s.index > 0) get().jump(s.index - 1); },
   redo: () => { const s = get(); if (s.index < s.history.length - 1) get().jump(s.index + 1); },
@@ -142,9 +149,14 @@ export const useStore = create<State>((set, get) => ({
     const e = s.history[i];
     if (!e) return;
     persist(e.svg);
-    set({ index: i, svg: e.svg, selection: validSelection(e.svg, s.selection), nodeEdit: null });
+    // stay in node editing when undoing node changes, as long as the path still exists
+    const keepNode = s.nodeEdit && tryParse(e.svg).doc && getEl(tryParse(e.svg).doc!, s.nodeEdit)?.localName === 'path';
+    set({ index: i, svg: e.svg, selection: validSelection(e.svg, s.selection), nodeEdit: keepNode ? s.nodeEdit : null, nodeSel: null });
   },
-  select: (ids) => set((s) => ({ selection: ids, nodeEdit: s.nodeEdit && ids.length === 1 && ids[0] === s.nodeEdit ? s.nodeEdit : null })),
+  select: (ids) => set((s) => {
+    const nodeEdit = s.nodeEdit && ids.length === 1 && ids[0] === s.nodeEdit ? s.nodeEdit : null;
+    return { selection: ids, nodeEdit, nodeSel: nodeEdit ? s.nodeSel : null };
+  }),
   set: (p) => set(p),
   setSettings: (p) => {
     const settings = { ...get().settings, ...p };

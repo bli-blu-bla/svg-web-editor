@@ -7,7 +7,7 @@ import {
 import { transformEach } from '../lib/ops';
 import { GRAPHIC, SHAPES, isUnder, parentId, renderMarkup, parentMatrix, localMatrix } from '../lib/svg';
 import { elToRoot, liveEl, rootBBox, setLiveRoot, getLiveRoot } from '../lib/live';
-import { parsePath, serializePath, toEditable, type Seg } from '../lib/path';
+import { cloneSubs, fromNodes, insertNode, nearestOnPath, nodeKind, toNodes, type NodeKind, type NodeRef, type SubPath } from '../lib/nodes';
 import * as A from '../actions';
 import { shapeSpec, SQUARE_SHAPES } from '../lib/shapes';
 
@@ -17,39 +17,9 @@ type Drag =
   | { kind: 'move' | 'scale' | 'rotate'; start: Pt; box: Box; items: Item[]; handle?: string; moved: boolean; m: Mat }
   | { kind: 'marquee'; start: Pt; add: boolean; base: string[] }
   | { kind: 'draw'; start: Pt; cx: number; cy: number; moved: boolean }
-  | { kind: 'node'; el: SVGPathElement; segs: Seg[]; orig: Seg[]; i: number; k: number; start: Pt; inv: Mat; moved: boolean };
+  | { kind: 'node'; el: SVGPathElement; orig: SubPath[]; subs: SubPath[]; ref: NodeRef; part: 'a' | 'in' | 'out'; start: Pt; inv: Mat; moved: boolean; kind0: NodeKind };
 
 type TDrag = Extract<Drag, { items: Item[] }>;
-interface NodePt { i: number; k: number; kind: 'anchor' | 'ctrl'; x: number; y: number; links: [number, number][] }
-
-function nodePoints(segs: Seg[]): NodePt[] {
-  const out: NodePt[] = [];
-  let px = 0, py = 0, sx = 0, sy = 0;
-  segs.forEach((s, i) => {
-    const v = s.v;
-    switch (s.c) {
-      case 'M': out.push({ i, k: 0, kind: 'anchor', x: v[0], y: v[1], links: [] }); sx = v[0]; sy = v[1]; break;
-      case 'L': case 'T': out.push({ i, k: 0, kind: 'anchor', x: v[0], y: v[1], links: [] }); break;
-      case 'C':
-        out.push({ i, k: 0, kind: 'ctrl', x: v[0], y: v[1], links: [[px, py]] });
-        out.push({ i, k: 2, kind: 'ctrl', x: v[2], y: v[3], links: [[v[4], v[5]]] });
-        out.push({ i, k: 4, kind: 'anchor', x: v[4], y: v[5], links: [] });
-        break;
-      case 'S':
-        out.push({ i, k: 0, kind: 'ctrl', x: v[0], y: v[1], links: [[v[2], v[3]]] });
-        out.push({ i, k: 2, kind: 'anchor', x: v[2], y: v[3], links: [] });
-        break;
-      case 'Q':
-        out.push({ i, k: 0, kind: 'ctrl', x: v[0], y: v[1], links: [[px, py], [v[2], v[3]]] });
-        out.push({ i, k: 2, kind: 'anchor', x: v[2], y: v[3], links: [] });
-        break;
-      case 'A': out.push({ i, k: 5, kind: 'anchor', x: v[5], y: v[6], links: [] }); break;
-    }
-    if (s.c === 'Z') { px = sx; py = sy; } else if (v.length) { px = v[v.length - 2]; py = v[v.length - 1]; }
-  });
-  return out;
-}
-
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const CURSORS: Record<string, string> = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize' };
 
@@ -81,9 +51,10 @@ export function Canvas() {
   const [boxes, setBoxes] = useState<Record<string, Box>>({});
   const [hoverBox, setHoverBox] = useState<Box | null>(null);
   const [nodeMat, setNodeMat] = useState<Mat | null>(null);
-  const [nodeSegs, setNodeSegs] = useState<Seg[] | null>(null);
+  const [nodeSubs, setNodeSubs] = useState<SubPath[] | null>(null);
   const [draw, setDraw] = useState<{ box: Box; line?: { a: Pt; b: Pt } } | null>(null);
-  const [selNode, setSelNode] = useState<{ i: number; k: number } | null>(null);
+  const selNode = useStore((s) => s.nodeSel);
+  const setSelNode = (r: NodeRef | null) => set({ nodeSel: r });
 
   const markup = useMemo(() => renderMarkup(svg), [svg]);
   const size = markup.size;
@@ -104,9 +75,9 @@ export function Canvas() {
       const el = liveEl(nodeEdit);
       if (el && el.localName === 'path') {
         setNodeMat(elToRoot(el));
-        setNodeSegs(toEditable(parsePath(el.getAttribute('d'))));
+        setNodeSubs(toNodes(el.getAttribute('d')));
       } else set({ nodeEdit: null });
-    } else { setNodeSegs(null); setSelNode(null); }
+    } else { setNodeSubs(null); if (useStore.getState().nodeSel) set({ nodeSel: null }); A.resetSmoothNodes(); }
   }, [markup.html, selection, nodeEdit, set]);
 
   useLayoutEffect(() => {
@@ -240,13 +211,18 @@ export function Canvas() {
     }
     const handle = target.closest('[data-handle]')?.getAttribute('data-handle');
     if (handle?.startsWith('node:') && s.nodeEdit) {
-      const [, i, k] = handle.split(':').map(Number);
+      const [, ss, jj, part] = handle.split(':');
+      const ref = { s: +ss, j: +jj };
       const el = liveEl(s.nodeEdit) as SVGPathElement;
-      const m = elToRoot(el);
-      if (el && m && nodeSegs) {
-        setSelNode({ i, k });
+      const m = el && elToRoot(el);
+      if (el && m && nodeSubs) {
+        if (part === 'a') setSelNode(ref);
         const iv = inv(m);
-        drag.current = { kind: 'node', el, segs: nodeSegs.map((x) => ({ c: x.c, v: x.v.slice() })), orig: nodeSegs, i, k, start: apply(iv, p.x, p.y), inv: iv, moved: false };
+        const node = nodeSubs[ref.s]?.nodes[ref.j];
+        drag.current = {
+          kind: 'node', el, orig: nodeSubs, subs: nodeSubs, ref, part: part as 'a' | 'in' | 'out',
+          start: apply(iv, p.x, p.y), inv: iv, moved: false, kind0: node ? A.effNodeKind(node, ref) : 'corner',
+        };
       }
       return;
     }
@@ -312,29 +288,32 @@ export function Canvas() {
       const lp = apply(d.inv, p.x, p.y);
       let dx = lp.x - d.start.x, dy = lp.y - d.start.y;
       if (e.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
-      const segs = d.orig.map((x) => ({ c: x.c, v: x.v.slice() }));
-      const s = segs[d.i];
-      const tx = snap(d.orig[d.i].v[d.k] + dx), ty = snap(d.orig[d.i].v[d.k + 1] + dy);
-      const ddx = tx - d.orig[d.i].v[d.k], ddy = ty - d.orig[d.i].v[d.k + 1];
-      const isAnchor = (s.c === 'C' && d.k === 4) || ((s.c === 'S' || s.c === 'Q') && d.k === 2) || ['M', 'L', 'T'].includes(s.c) || (s.c === 'A' && d.k === 5);
-      if (isAnchor) {
-        // move every anchor sharing this position (e.g. start + end of a closed subpath) with its handles
-        const ox = d.orig[d.i].v[d.k], oy = d.orig[d.i].v[d.k + 1];
-        nodePoints(d.orig).forEach((np) => {
-          if (np.kind !== 'anchor' || Math.abs(np.x - ox) > 1e-6 || Math.abs(np.y - oy) > 1e-6) return;
-          const sg = segs[np.i];
-          sg.v[np.k] = np.x + ddx; sg.v[np.k + 1] = np.y + ddy;
-          if (sg.c === 'C') { sg.v[2] += ddx; sg.v[3] += ddy; }
-          if (sg.c === 'S') { sg.v[0] += ddx; sg.v[1] += ddy; }
-          const nx = segs[np.i + 1];
-          if (nx && nx.c === 'C') { nx.v[0] += ddx; nx.v[1] += ddy; }
-        });
+      const subs = cloneSubs(d.orig);
+      const n = subs[d.ref.s]?.nodes[d.ref.j];
+      const o = d.orig[d.ref.s]?.nodes[d.ref.j];
+      if (!n || !o) return;
+      if (d.part === 'a') {
+        // anchor drags its handles along
+        const tx = snap(o.x + dx) - o.x, ty = snap(o.y + dy) - o.y;
+        n.x += tx; n.y += ty;
+        if (n.hin) { n.hin.x += tx; n.hin.y += ty; }
+        if (n.hout) { n.hout.x += tx; n.hout.y += ty; }
       } else {
-        s.v[d.k] = tx; s.v[d.k + 1] = ty;
+        const own = d.part === 'in' ? 'hin' : 'hout', other = d.part === 'in' ? 'hout' : 'hin';
+        const h0 = o[own]!;
+        const h = { x: snap(h0.x + dx), y: snap(h0.y + dy) };
+        n[own] = h;
+        // smooth / symmetric nodes keep the opposite handle in line (Alt breaks the link)
+        const opp = o[other];
+        if (opp && d.kind0 !== 'corner' && !e.altKey) {
+          const vx = n.x - h.x, vy = n.y - h.y, l = Math.hypot(vx, vy) || 1;
+          const ol = d.kind0 === 'symmetric' ? l : Math.hypot(opp.x - o.x, opp.y - o.y);
+          n[other] = { x: n.x + (vx / l) * ol, y: n.y + (vy / l) * ol };
+        }
       }
-      d.segs = segs; d.moved = true;
-      d.el.setAttribute('d', serializePath(segs, 6));
-      setNodeSegs(segs);
+      d.subs = subs; d.moved = true;
+      d.el.setAttribute('d', fromNodes(subs, 6));
+      setNodeSubs(subs);
       return;
     }
     const b = d.box;
@@ -409,8 +388,8 @@ export function Canvas() {
     if (d.kind === 'node') {
       if (d.moved) {
         const before = s.svg;
-        A.setAttr(s.nodeEdit!, 'd', serializePath(d.segs, s.settings.precision));
-        if (useStore.getState().svg === before) d.el.setAttribute('d', serializePath(d.orig, 6));
+        A.setAttr(s.nodeEdit!, 'd', fromNodes(d.subs, s.settings.precision));
+        if (useStore.getState().svg === before) d.el.setAttribute('d', fromNodes(d.orig, 6));
       }
       return;
     }
@@ -430,6 +409,24 @@ export function Canvas() {
     const s = useStore.getState();
     // pointer capture retargets click events to the viewport → hit-test manually
     const target = document.elementFromPoint(e.clientX, e.clientY) ?? (e.target as Element);
+    if (s.nodeEdit && nodeSubs && nodeMat) {
+      const h = target.closest('[data-handle]')?.getAttribute('data-handle');
+      if (h?.startsWith('node:')) {
+        // double-click on a node: corner ↔ smooth
+        const [, ss, jj, part] = h.split(':');
+        if (part === 'a') A.toggleNodeKind({ s: +ss, j: +jj });
+        return;
+      }
+      // double-click on the outline: add a node there
+      const rp = toRoot(e);
+      const lp = apply(inv(nodeMat), rp.x, rp.y);
+      const hit = nearestOnPath(nodeSubs, lp);
+      const scale = Math.sqrt(Math.abs(nodeMat[0] * nodeMat[3] - nodeMat[1] * nodeMat[2])) * zoom;
+      if (hit && hit.dist * scale < 8) {
+        A.editNodes('Knoten hinzufügen', (subs) => insertNode(subs, hit.s, hit.j, hit.t)); A.resetSmoothNodes();
+        return;
+      }
+    }
     const id = pick(target, false);
     if (id === null) { set({ scope: '', nodeEdit: null }); return; }
     const el = liveEl(id);
@@ -490,24 +487,28 @@ export function Canvas() {
       );
     }
   }
-  if (nodeEdit && nodeSegs && nodeMat) {
+  if (nodeEdit && nodeSubs && nodeMat) {
     const M = mulAll(V, nodeMat);
-    const pts = nodePoints(nodeSegs);
-    const tp = (x: number, y: number) => apply(M, x, y);
-    pts.filter((p) => p.kind === 'ctrl').forEach((p) => {
-      const a = tp(p.x, p.y);
-      p.links.forEach(([lx, ly], j) => {
-        const b = tp(lx, ly);
-        overlay.push(<line key={`l${p.i}-${p.k}-${j}`} className="ov-link" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />);
+    const tp = (q: { x: number; y: number }) => apply(M, q.x, q.y);
+    const handles: JSX.Element[] = [], anchors: JSX.Element[] = [];
+    nodeSubs.forEach((sp, si) => sp.nodes.forEach((n, j) => {
+      const a = tp(n);
+      const key = `${si}:${j}`;
+      const isSel = selNode?.s === si && selNode.j === j;
+      (['hin', 'hout'] as const).forEach((hk) => {
+        const hp = n[hk];
+        if (!hp) return;
+        const b = tp(hp);
+        handles.push(<line key={`l${key}${hk}`} className="ov-link" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />);
+        handles.push(<circle key={`h${key}${hk}`} data-handle={`node:${key}:${hk === 'hin' ? 'in' : 'out'}`} className="ov-ctrl" cx={b.x} cy={b.y} r={3.5} />);
       });
-    });
-    pts.forEach((p) => {
-      const a = tp(p.x, p.y);
-      const sel = selNode && selNode.i === p.i && selNode.k === p.k;
-      overlay.push(p.kind === 'anchor'
-        ? <rect key={`n${p.i}-${p.k}`} data-handle={`node:${p.i}:${p.k}`} className={'ov-anchor' + (sel ? ' on' : '')} x={a.x - 4} y={a.y - 4} width={8} height={8} />
-        : <circle key={`n${p.i}-${p.k}`} data-handle={`node:${p.i}:${p.k}`} className={'ov-ctrl' + (sel ? ' on' : '')} cx={a.x} cy={a.y} r={3.5} />);
-    });
+      const kind = nodeKind(n);
+      const cls = 'ov-anchor' + (isSel ? ' on' : '');
+      anchors.push(kind === 'corner'
+        ? <rect key={`a${key}`} data-handle={`node:${key}:a`} className={cls} x={a.x - 4} y={a.y - 4} width={8} height={8} />
+        : <circle key={`a${key}`} data-handle={`node:${key}:a`} className={cls + ' smooth'} cx={a.x} cy={a.y} r={4.5} />);
+    }));
+    overlay.push(...handles, ...anchors);
   }
   if (draw) {
     const spec = shapeSpec(settings.shape, draw.box, { starPoints: settings.starPoints, starInner: settings.starInner, polySides: settings.polySides, prec: 4 }, draw.line);
@@ -568,7 +569,7 @@ export function Canvas() {
             <button onClick={() => set({ scope: '' })}>Verlassen</button>
           </div>
         )}
-        {nodeEdit && <div className="scope-pill">Knoten bearbeiten – Punkte ziehen (⇧ = Achse) · Esc beendet</div>}
+        {nodeEdit && <div className="scope-pill">Knoten: ziehen (⇧ Achse, ⌥ Anfasser lösen) · Doppelklick Knoten = Ecke↔Glatt · Doppelklick Kontur = Knoten hinzufügen · Entf löscht</div>}
       </div>
     </div>
   );
