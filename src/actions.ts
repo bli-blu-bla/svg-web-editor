@@ -333,6 +333,25 @@ export function insertShape(kind: ShapeKind, box: Box, line?: { a: Pt; b: Pt }) 
   edit(`${SHAPE_LABELS[kind]} einfügen`, (doc) => ops.insertShape(doc, spec, style, s.scope, o.precision));
 }
 
+/** Insert a path drawn with the pen tool (root coordinates); open paths get a stroke, closed ones a fill */
+export function insertPenPath(nodes: PNode[], closed: boolean) {
+  const s = st();
+  const o = s.settings;
+  const d = fromNodes([{ nodes, closed }], o.precision);
+  const style: Record<string, string> = {};
+  if (closed) {
+    style.fill = o.shapeFill;
+    if (o.shapeStroke !== 'none') { style.stroke = o.shapeStroke; style['stroke-width'] = String(o.shapeStrokeWidth); }
+  } else {
+    style.fill = 'none';
+    style.stroke = o.shapeStroke !== 'none' ? o.shapeStroke : o.shapeFill;
+    style['stroke-width'] = String(o.shapeStrokeWidth);
+    style['stroke-linecap'] = 'round';
+    style['stroke-linejoin'] = 'round';
+  }
+  edit('Pfad zeichnen', (doc) => ops.insertShape(doc, { tag: 'path', attrs: { d } }, style, s.scope, o.precision));
+}
+
 export function roundSelectedCorners(radius = st().settings.cornerRadius) {
   const ids = st().selection;
   if (!ids.length) return st().notify('Zuerst Elemente auswählen');

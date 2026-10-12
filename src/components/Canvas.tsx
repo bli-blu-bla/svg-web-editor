@@ -7,7 +7,7 @@ import {
 import { transformEach } from '../lib/ops';
 import { GRAPHIC, SHAPES, isUnder, parentId, renderMarkup, parentMatrix, localMatrix } from '../lib/svg';
 import { elToRoot, liveEl, rootBBox, setLiveRoot, getLiveRoot } from '../lib/live';
-import { cloneSubs, fromNodes, insertNode, nearestOnPath, nodeKind, toNodes, type NodeKind, type NodeRef, type SubPath } from '../lib/nodes';
+import { cloneSubs, fromNodes, insertNode, nearestOnPath, nodeKind, toNodes, type NodeKind, type NodeRef, type PNode, type SubPath } from '../lib/nodes';
 import * as A from '../actions';
 import { shapeSpec, SQUARE_SHAPES } from '../lib/shapes';
 import { ContextBar, NodeBar } from './ContextBar';
@@ -18,6 +18,7 @@ type Drag =
   | { kind: 'move' | 'scale' | 'rotate'; start: Pt; box: Box; items: Item[]; handle?: string; moved: boolean; m: Mat }
   | { kind: 'marquee'; start: Pt; add: boolean; base: string[] }
   | { kind: 'draw'; start: Pt; cx: number; cy: number; moved: boolean }
+  | { kind: 'pen'; cx: number; cy: number; moved: boolean }
   | { kind: 'node'; el: SVGPathElement; orig: SubPath[]; subs: SubPath[]; ref: NodeRef; part: 'a' | 'in' | 'out'; start: Pt; inv: Mat; moved: boolean; kind0: NodeKind };
 
 type TDrag = Extract<Drag, { items: Item[] }>;
@@ -54,6 +55,12 @@ export function Canvas() {
   const [nodeMat, setNodeMat] = useState<Mat | null>(null);
   const [nodeSubs, setNodeSubs] = useState<SubPath[] | null>(null);
   const [draw, setDraw] = useState<{ box: Box; line?: { a: Pt; b: Pt } } | null>(null);
+  /** nodes of the path being drawn with the pen tool (root coordinates) */
+  const [pen, setPenState] = useState<PNode[] | null>(null);
+  const penRef = useRef<PNode[] | null>(null);
+  const setPen = (n: PNode[] | null) => { penRef.current = n; setPenState(n); };
+  const [penPt, setPenPt] = useState<Pt | null>(null);
+  const penClick = useRef<{ t: number; x: number; y: number } | null>(null);
   const selNode = useStore((s) => s.nodeSel);
   const setSelNode = (r: NodeRef | null) => set({ nodeSel: r });
 
@@ -124,12 +131,49 @@ export function Canvas() {
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
   }, []);
 
+  // ---- pen tool: finish on Enter/Esc/tool change, Backspace/⌘Z removes the last node ----
+  const finishPen = useCallback((closed: boolean) => {
+    const nodes = penRef.current;
+    penRef.current = null;
+    setPenState(null);
+    if (nodes && nodes.length >= 2) A.insertPenPath(nodes, closed);
+  }, []);
+
+  useEffect(() => {
+    if (tool !== 'pen') { finishPen(false); setPenPt(null); }
+  }, [tool, finishPen]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const nodes = penRef.current;
+      if (!nodes) return;
+      const k = e.key.toLowerCase();
+      const undo = (e.metaKey || e.ctrlKey) && k === 'z' && !e.shiftKey;
+      if (k === 'enter' || k === 'escape') finishPen(false);
+      else if (k === 'backspace' || k === 'delete' || undo) setPen(nodes.length > 1 ? nodes.slice(0, -1) : null);
+      else return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [finishPen]);
+
   const toRoot = useCallback((e: { clientX: number; clientY: number }): Pt => {
     const r = vpRef.current!.getBoundingClientRect();
     return apply(Vi, e.clientX - r.left, e.clientY - r.top);
   }, [Vi]);
 
   const snap = (v: number) => (settings.snap ? Math.round(v / settings.snapStep) * settings.snapStep : v);
+
+  /** Pen position: snapped, Shift locks the angle to the previous node in 45° steps */
+  function penPoint(raw: Pt, shift: boolean, from?: Pt | null): Pt {
+    const p = { x: snap(raw.x), y: snap(raw.y) };
+    if (!shift || !from) return p;
+    const dx = p.x - from.x, dy = p.y - from.y;
+    const a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4), l = Math.hypot(dx, dy);
+    return { x: from.x + Math.cos(a) * l, y: from.y + Math.sin(a) * l };
+  }
 
   /** Box (and line endpoints) of a shape being drawn; Shift = proportional / 45°, Alt = from center */
   function drawGeom(start: Pt, raw: Pt, e: { shiftKey: boolean; altKey: boolean }): { box: Box; line?: { a: Pt; b: Pt } } {
@@ -205,6 +249,23 @@ export function Canvas() {
       return;
     }
     const p = toRoot(e);
+    if (tool === 'pen') {
+      const nodes = penRef.current;
+      // the second click of a double-click ends the path (the first one already placed the node);
+      // PointerEvent.detail is always 0, so detect it by time and distance
+      const lc = penClick.current;
+      penClick.current = { t: e.timeStamp, x: e.clientX, y: e.clientY };
+      if (nodes && lc && e.timeStamp - lc.t < 400 && Math.hypot(e.clientX - lc.x, e.clientY - lc.y) < 5) { penClick.current = null; finishPen(false); return; }
+      const last = nodes?.[nodes.length - 1];
+      const q = penPoint(p, e.shiftKey, last);
+      if (nodes && nodes.length >= 2) {
+        const f = apply(V, nodes[0].x, nodes[0].y), c = apply(V, p.x, p.y);
+        if (Math.hypot(f.x - c.x, f.y - c.y) < 8) { finishPen(true); return; }
+      }
+      setPen([...(nodes ?? []), { x: q.x, y: q.y, hin: null, hout: null }]);
+      drag.current = { kind: 'pen', cx: e.clientX, cy: e.clientY, moved: false };
+      return;
+    }
     if (tool === 'shape') {
       const sp = settings.snap ? { x: snap(p.x), y: snap(p.y) } : p;
       drag.current = { kind: 'draw', start: sp, cx: e.clientX, cy: e.clientY, moved: false };
@@ -267,6 +328,7 @@ export function Canvas() {
     const d = drag.current;
     if (!d || d.kind !== 'pan') set({ cursor: toRoot(e) });
     if (!d) {
+      if (tool === 'pen') { const n = penRef.current; setPenPt(penPoint(toRoot(e), e.shiftKey, n?.[n.length - 1])); return; }
       if (tool === 'pan' || tool === 'shape' || space.current) return;
       const id = pick(e.target as Element, e.metaKey || e.ctrlKey || tool === 'node');
       if (id !== useStore.getState().hoverId) set({ hoverId: id });
@@ -277,6 +339,18 @@ export function Canvas() {
       return;
     }
     const p = toRoot(e);
+    if (d.kind === 'pen') {
+      // dragging pulls out symmetric handles → smooth curve node
+      const nodes = penRef.current;
+      if (!nodes) return;
+      if (Math.hypot(e.clientX - d.cx, e.clientY - d.cy) > 3) d.moved = true;
+      if (!d.moved) return;
+      const n = nodes[nodes.length - 1];
+      const h = penPoint(p, e.shiftKey, n);
+      setPen([...nodes.slice(0, -1), { x: n.x, y: n.y, hout: h, hin: { x: 2 * n.x - h.x, y: 2 * n.y - h.y } }]);
+      setPenPt(null);
+      return;
+    }
     if (d.kind === 'draw') {
       if (Math.hypot(e.clientX - d.cx, e.clientY - d.cy) > 3) d.moved = true;
       if (d.moved) setDraw(drawGeom(d.start, p, e));
@@ -408,6 +482,7 @@ export function Canvas() {
   };
 
   const onDoubleClick = (e: React.MouseEvent) => {
+    if (tool === 'pen') return;
     const s = useStore.getState();
     // pointer capture retargets click events to the viewport → hit-test manually
     const target = document.elementFromPoint(e.clientX, e.clientY) ?? (e.target as Element);
@@ -529,6 +604,40 @@ export function Canvas() {
       </g>,
     );
   }
+  if (pen && pen.length) {
+    const M = V;
+    const tp = (q: Pt) => apply(M, q.x, q.y);
+    const last = pen[pen.length - 1];
+    const f = tp(pen[0]);
+    const closing = !!penPt && pen.length >= 2 && Math.hypot(tp(penPt).x - f.x, tp(penPt).y - f.y) < 8;
+    const rubber = penPt && (() => {
+      const a = tp(last), b = closing ? f : tp(penPt), h = last.hout ? tp(last.hout) : null;
+      const hb = closing && pen[0].hin ? tp(pen[0].hin) : b;
+      return h || hb !== b ? `M${a.x} ${a.y}C${(h ?? a).x} ${(h ?? a).y} ${hb.x} ${hb.y} ${b.x} ${b.y}` : `M${a.x} ${a.y}L${b.x} ${b.y}`;
+    })();
+    overlay.push(
+      <g key="pen">
+        <path className="ov-pen" d={fromNodes([{ nodes: pen, closed: false }], 6)} transform={`matrix(${M.join(' ')})`} vectorEffect="non-scaling-stroke" />
+        {rubber && <path className="ov-pen rubber" d={rubber} />}
+        {(['hin', 'hout'] as const).map((hk) => {
+          const hp = last[hk];
+          if (!hp) return null;
+          const a = tp(last), b = tp(hp);
+          return (
+            <g key={hk}>
+              <line className="ov-link" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
+              <circle className="ov-ctrl" cx={b.x} cy={b.y} r={3.5} />
+            </g>
+          );
+        })}
+        {pen.map((n, j) => {
+          const a = tp(n);
+          const r = j === 0 && closing ? 6 : 4;
+          return <rect key={j} className={`ov-anchor ${j === pen.length - 1 || (j === 0 && closing) ? 'on' : ''}`} x={a.x - r} y={a.y - r} width={2 * r} height={2 * r} />;
+        })}
+      </g>,
+    );
+  }
   if (marquee) overlay.push(<polygon key="mq" className="ov-marquee" points={ptsStr(poly(marquee, null))} />);
   if (scope) {
     const sb = rootBBox(scope);
@@ -546,7 +655,7 @@ export function Canvas() {
   return (
     <div
       ref={vpRef}
-      className={`viewport ${tool === 'pan' || spaceDown ? 'panning' : ''} ${tool === 'node' || tool === 'shape' ? 'node-tool' : ''}`}
+      className={`viewport ${tool === 'pan' || spaceDown ? 'panning' : ''} ${tool === 'node' || tool === 'shape' || tool === 'pen' ? 'node-tool' : ''}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -564,7 +673,7 @@ export function Canvas() {
       </div>
       <svg className="overlay">{overlay}</svg>
       {markup.error && <div className="canvas-error">SVG-Fehler: {markup.error}</div>}
-      {settings.contextBar && !dragM && !marquee && !draw && tool !== 'shape' && tool !== 'pan' && (() => {
+      {settings.contextBar && !dragM && !marquee && !draw && tool !== 'shape' && tool !== 'pan' && tool !== 'pen' && (() => {
         const vw = vpRef.current?.clientWidth ?? 800;
         const clampX = (x: number) => Math.max(170, Math.min(vw - 170, x));
         if (nodeEdit && selNode && nodeSubs && nodeMat) {
@@ -580,6 +689,16 @@ export function Canvas() {
         const above = minY - 84 > 4;
         return <ContextBar x={clampX(cx)} y={above ? minY - 84 : maxY + 36} count={selection.length} />;
       })()}
+      {tool === 'pen' && (
+        <div className="key-hints">
+          <span><kbd>Klick</kbd> Eckpunkt</span>
+          <span><kbd>Ziehen</kbd> Kurvenpunkt</span>
+          <span><kbd>⇧</kbd> 45°-Winkel</span>
+          <span><kbd>Klick auf Start</kbd> Schließen</span>
+          <span><kbd>Enter</kbd> / <kbd>Doppelklick</kbd> Beenden</span>
+          <span><kbd>⌫</kbd> Letzten Punkt entfernen</span>
+        </div>
+      )}
       {nodeEdit && (
         <div className="key-hints">
           <span><kbd>Doppelklick</kbd> Ecke ↔ Glatt</span>

@@ -276,6 +276,8 @@ code, kbd, .mono { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, 
 .bool-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .bool-row .btn { justify-content: flex-start; padding: 0 8px; font-size: 12px; }
 .bool-ico { flex: none; }
+.ov-pen { fill: none; stroke: var(--accent-2); stroke-width: 1.5; }
+.ov-pen.rubber { stroke-dasharray: 4 3; opacity: .8; }
 .ov-draw { fill: rgba(139,124,246,.18); stroke: var(--accent-2); stroke-width: 1.5; }
 
 /* ---------- shape picker ---------- */

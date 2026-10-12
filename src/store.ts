@@ -8,7 +8,7 @@ import type { NodeRef } from './lib/nodes';
 import { docName, loadRecent, newDocId, saveRecent, upsertRecent, type RecentDoc } from './lib/recent';
 
 export interface Entry { svg: string; label: string; time: number; key?: string }
-export type Tool = 'select' | 'node' | 'pan' | 'shape';
+export type Tool = 'select' | 'node' | 'pan' | 'shape' | 'pen';
 export type InspectorTab = 'design' | 'path' | 'node' | 'code' | 'history';
 
 export interface Settings {

@@ -26,6 +26,7 @@ Built with React, TypeScript and Vite. Everything runs locally in the browser, n
 - Rectangle, square, circle, ellipse, triangle, polygon, star, arrow, line, cross, heart
 - Drag to draw (Shift = proportional / 45°, Alt = from center) or click for a default size
 - Configurable fill, stroke, star points / inner radius and polygon sides
+- **Pen tool** (`P`): click for corner points, drag for smooth curve points (Shift = 45°), click the first point to close the path, `Enter` or double-click to finish, `⌫` removes the last point
 
 **Path tools**
 - **Offset** (grow / shrink): builds a border of 2 × distance around the visible shape (fill + stroke) and unites it with or cuts it from the shape; miter, round or bevel corners

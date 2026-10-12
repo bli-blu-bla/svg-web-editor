@@ -20,7 +20,7 @@ const st = () => useStore.getState();
 const sel = () => st().selection.length > 0;
 const multi = () => st().selection.length > 1;
 const node = () => !!st().nodeEdit;
-const tool = (t: 'select' | 'node' | 'pan') => () => st().set({ tool: t });
+const tool = (t: 'select' | 'node' | 'pan' | 'pen') => () => st().set({ tool: t });
 const shape = (k: ShapeKind) => () => { st().setSettings({ shape: k }); st().set({ tool: 'shape' }); };
 const toggle = (k: 'grid' | 'snap' | 'contextBar' | 'autoBake' | 'scaleStrokes') => () => st().setSettings({ [k]: !st().settings[k] });
 const onOff = (k: 'grid' | 'snap' | 'contextBar') => () => (st().settings[k] ? 'an' : 'aus');
@@ -56,6 +56,7 @@ export function commands(): Command[] {
     // Werkzeuge
     { id: 'tool-select', group: 'Werkzeuge', label: 'Auswahlwerkzeug', keys: 'V', run: tool('select') },
     { id: 'tool-node', group: 'Werkzeuge', label: 'Knotenwerkzeug', keys: 'A', run: tool('node') },
+    { id: 'tool-pen', group: 'Werkzeuge', label: 'Zeichenstift', keys: 'P', terms: 'pen pfad zeichnen bezier kurve klicken', run: tool('pen') },
     { id: 'tool-pan', group: 'Werkzeuge', label: 'Hand', keys: 'H', terms: 'verschieben ansicht', run: tool('pan') },
     ...SHAPE_ORDER.map((k): Command => ({ id: 'shape-' + k, group: 'Werkzeuge', label: `${SHAPE_LABELS[k]} zeichnen`, keys: SHAPE_KEYS[k], terms: 'form', run: shape(k) })),
 

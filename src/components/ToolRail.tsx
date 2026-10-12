@@ -1,4 +1,4 @@
-import { Grid3x3, Hand, Keyboard, Magnet, MousePointer2, Spline } from 'lucide-react';
+import { Grid3x3, Hand, Keyboard, Magnet, MousePointer2, PenTool, Spline } from 'lucide-react';
 import { useStore } from '../store';
 import { SHAPE_LABELS, type ShapeKind } from '../lib/shapes';
 import { RAIL_SHAPES, ShapeIcon, ShapePicker } from './ShapePicker';
@@ -27,6 +27,7 @@ export function ToolRail() {
     <nav className="rail" aria-label="Werkzeuge">
       <RailBtn label="Auswahl (V)" active={tool === 'select'} onClick={() => set({ tool: 'select' })}><MousePointer2 size={18} /></RailBtn>
       <RailBtn label="Knoten bearbeiten (A)" active={tool === 'node'} onClick={() => set({ tool: 'node' })}><Spline size={18} /></RailBtn>
+      <RailBtn label="Zeichenstift (P)" active={tool === 'pen'} onClick={() => set({ tool: tool === 'pen' ? 'select' : 'pen' })}><PenTool size={18} /></RailBtn>
       <div className="rail-sep" />
       {RAIL_SHAPES.map((k) => (
         <RailBtn key={k} label={`${SHAPE_LABELS[k]} (${SHAPE_KEYS[k]})`} active={tool === 'shape' && shape === k}
