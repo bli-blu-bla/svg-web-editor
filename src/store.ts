@@ -5,6 +5,7 @@ import { getEl, tryParse } from './lib/svg';
 import type { JoinKind } from './lib/offset';
 import type { ShapeKind } from './lib/shapes';
 import type { NodeRef } from './lib/nodes';
+import { docName, loadRecent, newDocId, saveRecent, upsertRecent, type RecentDoc } from './lib/recent';
 
 export interface Entry { svg: string; label: string; time: number; key?: string }
 export type Tool = 'select' | 'node' | 'pan' | 'shape';
@@ -60,6 +61,10 @@ interface State {
   settings: Settings;
   clipboard: string[];
   toast: string | null;
+  /** id and name of the open document in the recent list */
+  docId: string;
+  docName: string;
+  recent: RecentDoc[];
 
   commit: (svg: string, label: string, opts?: { selection?: string[]; key?: string }) => void;
   undo: () => void;
@@ -69,10 +74,15 @@ interface State {
   set: (p: Partial<State>) => void;
   setSettings: (p: Partial<Settings>) => void;
   notify: (msg: string) => void;
+  /** Replace the document and start a fresh undo history */
+  openDoc: (svg: string, name: string, id?: string, label?: string) => void;
+  renameRecent: (id: string, name: string) => void;
+  removeRecent: (id: string) => void;
 }
 
 const LS_DOC = 'svg-editor-doc';
 const LS_SET = 'svg-editor-settings';
+const LS_CUR = 'svg-editor-doc-id';
 
 const load = <T,>(k: string, def: T): T => {
   try { const v = localStorage.getItem(k); return v ? { ...def, ...JSON.parse(v) } : def; } catch { return def; }
@@ -90,6 +100,9 @@ const defaultSettings: Settings = {
 };
 
 const initial = loadDoc();
+const initialRecent = loadRecent();
+const initialId = (() => { try { return localStorage.getItem(LS_CUR) || newDocId(); } catch { return newDocId(); } })();
+const initialName = initialRecent.find((d) => d.id === initialId)?.name ?? (initial === SAMPLE ? 'Beispiel' : docName(initial));
 const MAX = 300;
 
 function validSelection(svg: string, sel: string[]): string[] {
@@ -99,10 +112,26 @@ function validSelection(svg: string, sel: string[]): string[] {
 }
 
 let saveTimer: number | undefined;
-const persist = (svg: string) => {
+let pending = false;
+const persist = () => {
+  pending = true;
   clearTimeout(saveTimer);
-  saveTimer = window.setTimeout(() => { try { localStorage.setItem(LS_DOC, svg); } catch { /* ignore */ } }, 300);
+  saveTimer = window.setTimeout(flushSave, 300);
 };
+/** Write the open document and its entry in the recent list */
+export function flushSave() {
+  clearTimeout(saveTimer);
+  if (!pending) return;
+  pending = false;
+  const s = useStore.getState();
+  try {
+    localStorage.setItem(LS_DOC, s.svg);
+    localStorage.setItem(LS_CUR, s.docId);
+  } catch { /* ignore */ }
+  const recent = upsertRecent(s.recent, s.docId, s.docName, s.svg);
+  if (recent !== s.recent) useStore.setState({ recent: saveRecent(recent) });
+}
+window.addEventListener('beforeunload', flushSave);
 
 let toastTimer: number | undefined;
 
@@ -124,6 +153,9 @@ export const useStore = create<State>((set, get) => ({
   settings: load(LS_SET, defaultSettings),
   clipboard: [],
   toast: null,
+  docId: initialId,
+  docName: initialName,
+  recent: initialRecent,
 
   commit: (svg, label, opts = {}) => {
     const s = get();
@@ -138,7 +170,7 @@ export const useStore = create<State>((set, get) => ({
       history.push({ svg, label, time: now, key: opts.key });
       if (history.length > MAX) history = history.slice(history.length - MAX);
     }
-    persist(svg);
+    persist();
     const nodeEdit = s.nodeEdit && selection.includes(s.nodeEdit) ? s.nodeEdit : null;
     set({ history, index: history.length - 1, svg, selection, nodeEdit, nodeSel: nodeEdit ? s.nodeSel : null });
   },
@@ -148,7 +180,7 @@ export const useStore = create<State>((set, get) => ({
     const s = get();
     const e = s.history[i];
     if (!e) return;
-    persist(e.svg);
+    persist();
     // stay in node editing when undoing node changes, as long as the path still exists
     const keepNode = s.nodeEdit && tryParse(e.svg).doc && getEl(tryParse(e.svg).doc!, s.nodeEdit)?.localName === 'path';
     set({ index: i, svg: e.svg, selection: validSelection(e.svg, s.selection), nodeEdit: keepNode ? s.nodeEdit : null, nodeSel: null });
@@ -167,5 +199,24 @@ export const useStore = create<State>((set, get) => ({
     clearTimeout(toastTimer);
     set({ toast: msg });
     toastTimer = window.setTimeout(() => set({ toast: null }), 2600);
+  },
+  openDoc: (svg, name, id = newDocId(), label = 'Geöffnet') => {
+    flushSave();
+    set({
+      svg, docId: id, docName: name, history: [{ svg, label, time: Date.now() }], index: 0,
+      selection: [], scope: '', nodeEdit: null, nodeSel: null, smoothNodes: [], fitReq: get().fitReq + 1,
+    });
+    persist();
+    flushSave();
+  },
+  renameRecent: (id, name) => {
+    const s = get();
+    set({ recent: saveRecent(s.recent.map((d) => (d.id === id ? { ...d, name } : d))), ...(id === s.docId ? { docName: name } : {}) });
+  },
+  removeRecent: (id) => {
+    const s = get();
+    set({ recent: saveRecent(s.recent.filter((d) => d.id !== id)) });
+    // the open document lives on as a new entry on its next change
+    if (id === s.docId) set({ docId: newDocId() });
   },
 }));

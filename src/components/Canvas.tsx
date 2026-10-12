@@ -554,7 +554,7 @@ export function Canvas() {
       onDrop={(e) => {
         e.preventDefault();
         const f = e.dataTransfer.files[0];
-        if (f) f.text().then((t) => A.loadSvg(t, `Datei ${f.name}`));
+        if (f) f.text().then((t) => A.loadSvg(t, `Datei ${f.name}`, f.name));
       }}
     >
       <div className={`stage ${settings.grid ? 'grid' : ''}`} style={stageStyle}>

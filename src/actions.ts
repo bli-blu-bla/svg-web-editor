@@ -4,6 +4,7 @@ import * as ops from './lib/ops';
 import { cleanSvgString, getEl, isSelectable, kids, parseSvg, serialize, idOf, docSize, prettyPrint, SVGNS } from './lib/svg';
 import { minify } from './lib/minify';
 import type { BoolOp } from './lib/area';
+import { docName } from './lib/recent';
 import { deleteNode, fromNodes, nodeKind, setNodeKind, toNodes, type NodeKind, type NodeRef, type PNode, type SubPath } from './lib/nodes';
 import { shapeSpec, SHAPE_LABELS, type ShapeKind } from './lib/shapes';
 import { elToRoot, liveEl, rootBBox } from './lib/live';
@@ -27,11 +28,11 @@ export function edit(label: string, fn: (doc: Document) => string[] | void, opts
   }
 }
 
-export function loadSvg(text: string, label = 'Importiert') {
+/** Open an SVG as a new document (own entry in the recent list, fresh undo history) */
+export function loadSvg(text: string, label = 'Importiert', name?: string) {
   try {
     const clean = cleanSvgString(text);
-    st().commit(clean, label, { selection: [] });
-    st().set({ scope: '', nodeEdit: null, fitReq: st().fitReq + 1 });
+    st().openDoc(clean, docName(clean, name), undefined, label);
   } catch (e) {
     st().notify('Ungültiges SVG: ' + (e as Error).message);
   }
@@ -42,7 +43,7 @@ export function newDocument() {
   if (!v) return;
   const [w, h] = v.split(/[x×, ]+/).map(Number);
   if (!(w > 0 && h > 0)) return st().notify('Ungültige Größe');
-  loadSvg(`<svg xmlns="${SVGNS}" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"></svg>`, 'Neues Dokument');
+  loadSvg(`<svg xmlns="${SVGNS}" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"></svg>`, 'Neues Dokument', `Neu ${w}×${h}`);
 }
 
 // ---------- selection ----------
@@ -264,7 +265,16 @@ export function pasteText(text: string | null) {
 }
 
 // ---------- export ----------
-export function download(name = 'image.svg', content = st().svg) {
+export const fileName = (suffix = '') => (st().docName.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'image') + suffix + '.svg';
+
+export function openRecent(id: string) {
+  const d = st().recent.find((r) => r.id === id);
+  if (!d) return;
+  if (id === st().docId) return st().set({ fitReq: st().fitReq + 1 });
+  st().openDoc(d.svg, d.name, d.id, `Geöffnet: ${d.name}`);
+}
+
+export function download(name = fileName(), content = st().svg) {
   const blob = new Blob([content], { type: 'image/svg+xml' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);

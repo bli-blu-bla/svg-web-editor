@@ -11,6 +11,7 @@ import { Layers } from './components/Layers';
 import { RightPanel } from './components/RightPanel';
 import { IconBtn } from './components/ui';
 import { ShapePicker } from './components/ShapePicker';
+import { RecentMenu } from './components/RecentMenu';
 import { getEl, parseSvg, SHAPES } from './lib/svg';
 
 function useShortcuts() {
@@ -103,8 +104,9 @@ function Toolbar() {
         <IconBtn title="Herunterladen (⌘S)" icon={<Download size={17} />} onClick={() => A.download()} />
         <IconBtn title="SVG kopieren" icon={<Copy size={17} />} onClick={A.copySvg} />
         <input id="file-input" ref={fileRef} type="file" accept=".svg,image/svg+xml" hidden
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) f.text().then((t) => A.loadSvg(t, `Datei ${f.name}`)); e.target.value = ''; }} />
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) f.text().then((t) => A.loadSvg(t, `Datei ${f.name}`, f.name)); e.target.value = ''; }} />
       </div>
+      <RecentMenu />
       <div className="tgroup">
         <IconBtn title="Auswahl (V)" icon={<MousePointer2 size={17} />} active={tool === 'select'} onClick={() => set({ tool: 'select' })} />
         <IconBtn title="Knoten bearbeiten (A)" icon={<Spline size={17} />} active={tool === 'node'} onClick={() => set({ tool: 'node' })} />

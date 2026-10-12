@@ -39,7 +39,7 @@ Built with React, TypeScript and Vite. Everything runs locally in the browser, n
 - Minify with SVGO (precision, multipass, keep IDs), format / pretty print
 - Preview at 16–64 px on dark and light backgrounds
 - Download, copy to clipboard, open files or drag & drop them onto the canvas, paste SVG code with `⌘V`
-- Work is saved in the browser automatically
+- Work is saved in the browser automatically; the **recent list** in the toolbar keeps previously opened and edited SVGs (with thumbnails, rename, search, remove) in `localStorage`
 
 ## Keyboard shortcuts
 
@@ -93,6 +93,7 @@ src/
     Layers.tsx         layer tree
     RightPanel.tsx     code editor, history, export
     ShapePicker.tsx    shape tool menu
+    RecentMenu.tsx     recently edited documents
   lib/
     matrix.ts          2D affine matrices and transform parsing
     path.ts            path parsing, normalisation, transforms, flattening
@@ -102,6 +103,8 @@ src/
     shapes.ts          shape generators and corner rounding
     svg.ts             parsing, sanitising, element IDs, colors
     minify.ts          SVGO wrapper
+    nodes.ts           path node model (corner / smooth / symmetric)
+    recent.ts          recent documents in localStorage
 ```
 
 ## Limitations

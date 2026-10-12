@@ -147,8 +147,8 @@ function ExportPane() {
       </Section>
       <Section title="Ausgabe">
         <div className="btn-col">
-          <button className="btn" onClick={() => A.download('image.svg')}><Download size={14} /> SVG herunterladen</button>
-          <button className="btn" disabled={!min} onClick={() => min && A.download('image.min.svg', min)}><Download size={14} /> Minifiziert herunterladen</button>
+          <button className="btn" onClick={() => A.download()}><Download size={14} /> SVG herunterladen</button>
+          <button className="btn" disabled={!min} onClick={() => min && A.download(A.fileName('.min'), min)}><Download size={14} /> Minifiziert herunterladen</button>
           <button className="btn" onClick={() => { navigator.clipboard?.writeText(min || svg); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
             {copied ? <Check size={14} /> : <Copy size={14} />} Minifiziertes SVG kopieren
           </button>
