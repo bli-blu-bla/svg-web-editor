@@ -1,13 +1,13 @@
 import { useStore } from './store';
 import { inv as invMat, mulAll, rotateAt, scaleAt, translate, unionBoxes, type Box, type Mat, type Pt } from './lib/matrix';
 import * as ops from './lib/ops';
-import { cleanSvgString, getEl, isSelectable, kids, parseSvg, serialize, idOf, docSize, prettyPrint, SVGNS } from './lib/svg';
+import { cleanSvgString, getEl, isSelectable, kids, parseSvg, serialize, idOf, docSize, prettyPrint, SHAPES, SVGNS } from './lib/svg';
 import { minify } from './lib/minify';
 import type { BoolOp } from './lib/area';
 import { docName } from './lib/recent';
-import { deleteNode, fromNodes, nodeKind, setNodeKind, toNodes, type NodeKind, type NodeRef, type PNode, type SubPath } from './lib/nodes';
+import { deleteNode, fromNodes, nodeKind, reverseSub, setNodeKind, splitAt, toNodes, type NodeKind, type NodeRef, type PNode, type SubPath } from './lib/nodes';
 import { shapeSpec, SHAPE_LABELS, type ShapeKind } from './lib/shapes';
-import { elToRoot, liveEl, rootBBox } from './lib/live';
+import { elToRoot, getLiveRoot, liveEl, rootBBox } from './lib/live';
 
 const st = () => useStore.getState();
 export const ctx = (): ops.Ctx => {
@@ -431,4 +431,70 @@ export function setAllNodesKind(kind: NodeKind) {
   });
   resetSmoothNodes();
   if (kind === 'smooth') markSmooth(refs, true);
+}
+
+/** Subpaths the path commands act on: the one of the selected node, else all */
+const targetSubs = (subs: SubPath[]) => {
+  const ref = st().nodeSel;
+  return ref && subs[ref.s] ? [subs[ref.s]] : subs;
+};
+
+export function reversePath() {
+  editNodes('Pfadrichtung umkehren', (subs) => { targetSubs(subs).forEach(reverseSub); return null; });
+  resetSmoothNodes();
+}
+
+export function setPathClosed(closed: boolean) {
+  editNodes(closed ? 'Pfad schließen' : 'Pfad öffnen', (subs) => {
+    targetSubs(subs).forEach((sp) => { if (sp.nodes.length > 2 || !closed) sp.closed = closed; });
+    return st().nodeSel;
+  });
+}
+
+export function splitAtSelectedNode() {
+  const ref = st().nodeSel;
+  if (!ref) return st().notify('Zuerst einen Knoten anklicken');
+  let ok = true;
+  editNodes('Pfad auftrennen', (subs) => { ok = splitAt(subs, ref); return null; });
+  if (!ok) st().notify('Am Endpunkt eines offenen Pfads gibt es nichts aufzutrennen');
+  resetSmoothNodes();
+}
+
+/** Enter node editing for the single selected path (shapes are converted first) */
+export function editSelectedNodes() {
+  const s = st();
+  if (s.selection.length !== 1) return s.notify('Genau ein Element auswählen');
+  const id = s.selection[0];
+  const el = getEl(parseSvg(s.svg), id);
+  if (!el) return;
+  if (el.localName === 'path') s.set({ nodeEdit: id });
+  else if (SHAPES.has(el.localName)) { convertToPath(); st().set({ nodeEdit: id }); }
+  else s.notify('Nur Pfade und Grundformen haben Knoten');
+}
+
+/** Shrink the viewBox to the drawing (plus optional padding) */
+export function fitDocumentToContent(pad = 0) {
+  const root = getLiveRoot();
+  if (!root) return;
+  const boxes = Array.from(root.children).map((c) => c.getAttribute('data-eid')).filter((id): id is string => !!id).map(rootBBox).filter((b): b is Box => !!b);
+  const u = unionBoxes(boxes);
+  if (!u || u.w <= 0 || u.h <= 0) return st().notify('Keine sichtbaren Elemente');
+  const r = (v: number) => +v.toFixed(3);
+  setDocAttrs({ viewBox: `${r(u.x - pad)} ${r(u.y - pad)} ${r(u.w + 2 * pad)} ${r(u.h + 2 * pad)}` });
+  st().set({ fitReq: st().fitReq + 1 });
+}
+
+/** Move the selected node to a position in path coordinates (handles move along) */
+export function setNodePos(p: { x?: number; y?: number }) {
+  const ref = st().nodeSel;
+  if (!ref) return;
+  editNodes('Knoten verschieben', (subs) => {
+    const n = subs[ref.s]?.nodes[ref.j];
+    if (!n) return ref;
+    const dx = (p.x ?? n.x) - n.x, dy = (p.y ?? n.y) - n.y;
+    n.x += dx; n.y += dy;
+    if (n.hin) { n.hin.x += dx; n.hin.y += dy; }
+    if (n.hout) { n.hout.x += dx; n.hout.y += dy; }
+    return ref;
+  });
 }

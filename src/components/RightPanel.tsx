@@ -3,28 +3,49 @@ import CodeMirror from '@uiw/react-codemirror';
 import { xml } from '@codemirror/lang-xml';
 import { EditorView } from '@codemirror/view';
 import { Download, Copy, Wand2, AlignLeft, Check } from 'lucide-react';
-import { useStore } from '../store';
+import { useStore, type InspectorTab } from '../store';
+import { DesignTab, NodeTab, PathTab } from './Properties';
 import * as A from '../actions';
 import { tryParse } from '../lib/svg';
 import { byteSize, fmtBytes, minify } from '../lib/minify';
 import { Section, Toggle } from './ui';
 
-type Tab = 'code' | 'history' | 'export';
+const TABS: { id: InspectorTab; label: string }[] = [
+  { id: 'node', label: 'Knoten' },
+  { id: 'design', label: 'Design' },
+  { id: 'path', label: 'Pfad' },
+  { id: 'code', label: 'Code' },
+  { id: 'history', label: 'Verlauf' },
+];
 
-export function RightPanel() {
-  const [tab, setTab] = useState<Tab>(() => (localStorage.getItem('right-tab') as Tab) || 'code');
-  const choose = (t: Tab) => { setTab(t); try { localStorage.setItem('right-tab', t); } catch { /* ignore */ } };
+/** Right-hand inspector: Design · Pfad · Code · Verlauf (plus Knoten while editing nodes) */
+export function Inspector() {
+  const tab = useStore((s) => s.inspectorTab);
+  const nodeEdit = useStore((s) => s.nodeEdit);
+  const set = useStore((s) => s.set);
+
+  // node editing brings its own tab to the front and takes it away again
+  useEffect(() => {
+    const s = useStore.getState();
+    if (nodeEdit && s.inspectorTab !== 'code' && s.inspectorTab !== 'history') set({ inspectorTab: 'node' });
+    if (!nodeEdit && s.inspectorTab === 'node') set({ inspectorTab: 'design' });
+  }, [nodeEdit, set]);
+
+  const shown = TABS.filter((t) => t.id !== 'node' || nodeEdit);
+  const active = tab === 'node' && !nodeEdit ? 'design' : tab;
   return (
-    <aside className="panel right">
-      <div className="tabs">
-        <button className={tab === 'code' ? 'on' : ''} onClick={() => choose('code')}>Code</button>
-        <button className={tab === 'history' ? 'on' : ''} onClick={() => choose('history')}>Verlauf</button>
-        <button className={tab === 'export' ? 'on' : ''} onClick={() => choose('export')}>Export</button>
+    <aside className="panel right" aria-label="Inspektor">
+      <div className="tabs" role="tablist">
+        {shown.map((t) => (
+          <button key={t.id} role="tab" aria-selected={active === t.id} className={active === t.id ? 'on' : ''} onClick={() => set({ inspectorTab: t.id })}>{t.label}</button>
+        ))}
       </div>
-      <div className="panel-body">
-        {tab === 'code' && <CodePane />}
-        {tab === 'history' && <HistoryPane />}
-        {tab === 'export' && <ExportPane />}
+      <div className={`panel-body ${active === 'code' ? 'flush' : ''}`}>
+        {active === 'node' && <NodeTab />}
+        {active === 'design' && <DesignTab />}
+        {active === 'path' && <PathTab />}
+        {active === 'code' && <CodePane />}
+        {active === 'history' && <HistoryPane />}
       </div>
     </aside>
   );
@@ -102,7 +123,7 @@ function HistoryPane() {
   );
 }
 
-function ExportPane() {
+export function ExportPane() {
   const svg = useStore((s) => s.svg);
   const settings = useStore((s) => s.settings);
   const setSettings = useStore((s) => s.setSettings);

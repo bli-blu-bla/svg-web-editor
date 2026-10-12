@@ -167,3 +167,35 @@ export function insertNode(subs: SubPath[], s: number, j: number, t: number): No
   sp.nodes.splice(j + 1, 0, node);
   return { s, j: j + 1 };
 }
+
+const flipNode = (n: PNode): PNode => ({ x: n.x, y: n.y, hin: n.hout, hout: n.hin });
+
+/** Reverse the drawing direction of a subpath (shape stays the same) */
+export function reverseSub(sp: SubPath) {
+  const rev = sp.nodes.slice().reverse().map(flipNode);
+  // a closed subpath keeps its start node
+  sp.nodes = sp.closed && rev.length > 1 ? [rev[rev.length - 1], ...rev.slice(0, -1)] : rev;
+}
+
+/** Open a closed subpath at a node, or split an open one there into two */
+export function splitAt(subs: SubPath[], ref: NodeRef): boolean {
+  const sp = subs[ref.s];
+  const n = sp?.nodes[ref.j];
+  if (!n) return false;
+  const copy = (q: PNode): PNode => ({ x: q.x, y: q.y, hin: q.hin && { ...q.hin }, hout: q.hout && { ...q.hout } });
+  if (sp.closed) {
+    const ns = [...sp.nodes.slice(ref.j), ...sp.nodes.slice(0, ref.j)];
+    const end = copy(ns[0]);
+    ns[0].hin = null;
+    end.hout = null;
+    sp.nodes = [...ns, end];
+    sp.closed = false;
+    return true;
+  }
+  if (ref.j === 0 || ref.j === sp.nodes.length - 1) return false;
+  const a = sp.nodes.slice(0, ref.j + 1), b = [copy(n), ...sp.nodes.slice(ref.j + 1)];
+  a[a.length - 1] = { ...a[a.length - 1], hout: null };
+  b[0].hin = null;
+  subs.splice(ref.s, 1, { nodes: a, closed: false }, { nodes: b, closed: false });
+  return true;
+}

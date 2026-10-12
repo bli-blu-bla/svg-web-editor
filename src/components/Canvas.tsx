@@ -10,6 +10,7 @@ import { elToRoot, liveEl, rootBBox, setLiveRoot, getLiveRoot } from '../lib/liv
 import { cloneSubs, fromNodes, insertNode, nearestOnPath, nodeKind, toNodes, type NodeKind, type NodeRef, type SubPath } from '../lib/nodes';
 import * as A from '../actions';
 import { shapeSpec, SQUARE_SHAPES } from '../lib/shapes';
+import { ContextBar, NodeBar } from './ContextBar';
 
 type Item = { id: string; el: SVGGraphicsElement; orig: string | null; P: Mat; L: Mat };
 type Drag =
@@ -264,6 +265,7 @@ export function Canvas() {
 
   const onPointerMove = (e: React.PointerEvent) => {
     const d = drag.current;
+    if (!d || d.kind !== 'pan') set({ cursor: toRoot(e) });
     if (!d) {
       if (tool === 'pan' || tool === 'shape' || space.current) return;
       const id = pick(e.target as Element, e.metaKey || e.ctrlKey || tool === 'node');
@@ -548,7 +550,7 @@ export function Canvas() {
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onPointerLeave={() => !drag.current && set({ hoverId: null })}
+      onPointerLeave={() => !drag.current && set({ hoverId: null, cursor: null })}
       onDoubleClick={onDoubleClick}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
@@ -562,15 +564,32 @@ export function Canvas() {
       </div>
       <svg className="overlay">{overlay}</svg>
       {markup.error && <div className="canvas-error">SVG-Fehler: {markup.error}</div>}
-      <div className="pills">
-        {scope && (
-          <div className="scope-pill" onPointerDown={(e) => e.stopPropagation()}>
-            In Gruppe <code>{scope}</code>
-            <button onClick={() => set({ scope: '' })}>Verlassen</button>
-          </div>
-        )}
-        {nodeEdit && <div className="scope-pill">Knoten: ziehen (⇧ Achse, ⌥ Anfasser lösen) · Doppelklick Knoten = Ecke↔Glatt · Doppelklick Kontur = Knoten hinzufügen · Entf löscht</div>}
-      </div>
+      {settings.contextBar && !dragM && !marquee && !draw && tool !== 'shape' && tool !== 'pan' && (() => {
+        const vw = vpRef.current?.clientWidth ?? 800;
+        const clampX = (x: number) => Math.max(170, Math.min(vw - 170, x));
+        if (nodeEdit && selNode && nodeSubs && nodeMat) {
+          const n = nodeSubs[selNode.s]?.nodes[selNode.j];
+          if (!n) return null;
+          const a = apply(mulAll(V, nodeMat), n.x, n.y);
+          return <NodeBar x={clampX(a.x)} y={a.y + 20} node={n} />;
+        }
+        if (!union || nodeEdit) return null;
+        const c = poly(union, null);
+        const minY = Math.min(...c.map((q) => q.y)), maxY = Math.max(...c.map((q) => q.y));
+        const cx = (Math.min(...c.map((q) => q.x)) + Math.max(...c.map((q) => q.x))) / 2;
+        const above = minY - 84 > 4;
+        return <ContextBar x={clampX(cx)} y={above ? minY - 84 : maxY + 36} count={selection.length} />;
+      })()}
+      {nodeEdit && (
+        <div className="key-hints">
+          <span><kbd>Doppelklick</kbd> Ecke ↔ Glatt</span>
+          <span><kbd>Doppelklick Kontur</kbd> Knoten einfügen</span>
+          <span><kbd>⌥</kbd> Anfasser lösen</span>
+          <span><kbd>⇧</kbd> Achse sperren</span>
+          <span><kbd>⌫</kbd> Knoten löschen</span>
+          <span><kbd>Esc</kbd> Fertig</span>
+        </div>
+      )}
     </div>
   );
 }

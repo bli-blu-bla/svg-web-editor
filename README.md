@@ -8,13 +8,18 @@ Built with React, TypeScript and Vite. Everything runs locally in the browser, n
 
 ## Features
 
+**Layout**
+- Tool rail on the left, layers next to it, a tabbed inspector on the right (**Design · Pfad · Code · Verlauf**, plus **Knoten** while editing nodes) and a status bar with pointer position, selection size and minified file size
+- A floating **context bar** above the selection (combine, center, offset, edit nodes, duplicate, delete) and below the selected node (node type, split, delete)
+- **Command palette** (`⌘K`): search and run every command, with recently used commands first
+
 **Editing**
 - Select by click, Shift+click or marquee; `⌘A` selects everything, `⌘`+click selects inside groups
 - Move (drag / arrow keys), scale with 8 handles, rotate with the rotate handle
 - Numeric X / Y / width / height with a 9-point **reference point** (top left … center … bottom right), scale in %, rotate, flip
 - Align and distribute, arrange (front/back), group / ungroup, duplicate, copy / cut / paste
 - Transforms are written straight into the geometry (path data, `x`/`y`, `cx`/`cy`, …) instead of piling up `transform` attributes — optional, with stroke-width scaling
-- Node editing for paths: drag anchors and control points, switch nodes between corner / smooth / symmetric, add nodes by double-clicking the outline, delete with `⌫`
+- Node editing for paths: drag anchors and control points, switch nodes between corner / smooth / symmetric, set node positions numerically, add nodes by double-clicking the outline, delete with `⌫`, split, close / open and reverse paths
 - Undo / redo with a clickable history
 
 **Shapes**
@@ -45,6 +50,7 @@ Built with React, TypeScript and Vite. Everything runs locally in the browser, n
 
 | Keys | Action |
 | --- | --- |
+| `⌘K` | Command palette |
 | `⌘Z` / `⇧⌘Z` | Undo / redo |
 | `⌘A` | Select all |
 | `⌘C` / `⌘X` / `⌘V` | Copy / cut / paste (also raw SVG code) |
@@ -87,12 +93,17 @@ src/
   App.tsx              layout, toolbar, keyboard shortcuts
   store.ts             state: document, history, selection, settings
   actions.ts           editor commands used by the UI
+  commands.ts          command list for the palette
   components/
     Canvas.tsx         rendering, selection, handles, drawing, node editing
-    Properties.tsx     properties panel
+    Properties.tsx     inspector tabs (design, path, nodes)
     Layers.tsx         layer tree
-    RightPanel.tsx     code editor, history, export
-    ShapePicker.tsx    shape tool menu
+    RightPanel.tsx     inspector, code editor, history, export
+    ToolRail.tsx       tool bar on the left
+    ShapePicker.tsx    shape flyout in the tool bar
+    ContextBar.tsx     floating actions for selection and nodes
+    CommandPalette.tsx ⌘K command search
+    StatusBar.tsx      status bar
     RecentMenu.tsx     recently edited documents
   lib/
     matrix.ts          2D affine matrices and transform parsing

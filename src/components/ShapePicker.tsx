@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronRight, Shapes } from 'lucide-react';
 import { useStore } from '../store';
 import { SHAPE_LABELS, shapeSpec, type ShapeKind } from '../lib/shapes';
 import { createElement } from 'react';
@@ -20,6 +20,9 @@ export function ShapeIcon({ kind, size = 17 }: { kind: ShapeKind; size?: number 
   );
 }
 
+/** Rail shapes get their own button; the rest live in this flyout */
+export const RAIL_SHAPES: ShapeKind[] = ['rect', 'circle', 'star', 'line'];
+
 export function ShapePicker() {
   const tool = useStore((s) => s.tool);
   const shape = useStore((s) => s.settings.shape);
@@ -36,13 +39,15 @@ export function ShapePicker() {
   }, [open]);
 
   const choose = (k: ShapeKind) => { setSettings({ shape: k }); set({ tool: 'shape' }); setOpen(false); };
+  const other = !RAIL_SHAPES.includes(shape);
 
   return (
     <div className="shape-picker" ref={ref}>
-      <button className={`iconbtn ${tool === 'shape' ? 'active' : ''}`} title={`${SHAPE_LABELS[shape]} zeichnen`} onClick={() => set({ tool: tool === 'shape' ? 'select' : 'shape' })}>
-        <ShapeIcon kind={shape} />
+      <button className={`iconbtn rail-btn ${tool === 'shape' && other ? 'active' : ''} ${open ? 'open' : ''}`} aria-label="Weitere Formen"
+        title={other ? `${SHAPE_LABELS[shape]} – weitere Formen` : 'Weitere Formen'} onClick={() => setOpen(!open)}>
+        {other ? <ShapeIcon kind={shape} size={18} /> : <Shapes size={18} />}
+        <ChevronRight size={10} className="rail-more" />
       </button>
-      <button className="iconbtn caret" title="Form wählen" onClick={() => setOpen(!open)}><ChevronDown size={13} /></button>
       {open && (
         <div className="shape-menu">
           {SHAPE_ORDER.map((k) => (

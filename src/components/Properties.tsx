@@ -2,14 +2,14 @@ import { useMemo, useState } from 'react';
 import {
   AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
   AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, FlipHorizontal2, FlipVertical2, RotateCcw, RotateCw,
-  Lock, Unlock, Copy, Trash2, Group, Ungroup, BringToFront, SendToBack, ArrowUp, ArrowDown, Ban, Plus, X,
+  Lock, Unlock, Copy, Trash2, Group, Ungroup, BringToFront, SendToBack, ArrowUp, ArrowDown, Ban, Plus, X, Scissors, ArrowLeftRight,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { SHAPE_LABELS } from '../lib/shapes';
 import { toNodes, type NodeKind } from '../lib/nodes';
 import { ShapeIcon, SHAPE_ORDER } from './ShapePicker';
 import * as A from '../actions';
-import { docSize, effProp, getEl, idOf, isSelectable, kids, listColors, ownProp, toHex, tryParse } from '../lib/svg';
+import { docSize, effProp, getEl, listColors, ownProp, toHex, tryParse } from '../lib/svg';
 import { IconBtn, NumField, Section, Segmented, TextField, Toggle } from './ui';
 
 export function useDoc() {
@@ -21,97 +21,82 @@ function common(vals: string[]): string | null {
   return vals.length && vals.every((v) => v === vals[0]) ? vals[0] : null;
 }
 
-export function Properties() {
+function useSelection() {
   const doc = useDoc();
   const selection = useStore((s) => s.selection);
+  const els = useMemo(() => (doc ? selection.map((id) => getEl(doc, id)).filter((e): e is Element => !!e) : []), [doc, selection]);
+  return { doc, selection, els };
+}
+
+const TAG_NAMES: Record<string, string> = { path: 'Pfad', rect: 'Rechteck', circle: 'Kreis', ellipse: 'Ellipse', line: 'Linie', polyline: 'Polylinie', polygon: 'Polygon', g: 'Gruppe', text: 'Text', image: 'Bild', use: 'Verweis' };
+
+function SelHeader({ els }: { els: Element[] }) {
   const scope = useStore((s) => s.scope);
+  if (!els.length) return null;
+  const one = els.length === 1 ? els[0] : null;
+  const counts = new Map<string, number>();
+  els.forEach((e) => counts.set(e.localName, (counts.get(e.localName) ?? 0) + 1));
+  return (
+    <div className="sel-head">
+      {one ? <span className="tag">{one.localName}</span> : <span className="tag">{els.length}</span>}
+      <span className="sel-name">{one ? one.getAttribute('id') || TAG_NAMES[one.localName] || one.localName : 'Elemente'}</span>
+      <span className="sel-sub">
+        {one ? (scope ? `in Gruppe ${scope}` : '') : [...counts].map(([t, n]) => `${n} ${TAG_NAMES[t] ?? t}`).join(', ')}
+      </span>
+    </div>
+  );
+}
+
+/** Inspector tab "Design": position, appearance, arrangement — or the document when nothing is selected */
+export function DesignTab() {
+  const { doc, selection, els } = useSelection();
   const union = useStore((s) => s.geo.union);
   const settings = useStore((s) => s.settings);
   const tool = useStore((s) => s.tool);
-  const nodeEdit = useStore((s) => s.nodeEdit);
   const setSettings = useStore((s) => s.setSettings);
   const [scalePct, setScalePct] = useState(100);
   const [rot, setRot] = useState(15);
-  const [toDoc, setToDoc] = useState(false);
-
-  const els = useMemo(() => (doc ? selection.map((id) => getEl(doc, id)).filter((e): e is Element => !!e) : []), [doc, selection]);
+  const [more, setMore] = useState(false);
   if (!doc) return <div className="panel-empty">SVG kann nicht geparst werden – Code prüfen.</div>;
 
-  const scopeEl = getEl(doc, scope) || doc.documentElement;
-  const all = kids(scopeEl).filter(isSelectable).map(idOf);
-  const isAll = selection.length > 1 && all.length === selection.length && all.every((id) => selection.includes(id));
   const has = els.length > 0;
-
   const eff = (p: string, def: string) => common(els.map((e) => effProp(e, p, def)));
-
-  const selLabel = !has ? 'Keine' : isAll ? 'Alle' : els.length === 1
-    ? `<${els[0].localName}>${els[0].getAttribute('id') ? ' #' + els[0].getAttribute('id') : ''}`
-    : `${els.length} Elemente`;
 
   return (
     <div className="props">
-      <div className="sel-info">
-        <span>Auswahl:</span> <code>{selLabel}</code>
-      </div>
-
+      <SelHeader els={els} />
       {tool === 'shape' && <ShapeSection />}
-      {nodeEdit && <NodeSection doc={doc} id={nodeEdit} />}
+      {!has && tool !== 'shape' && <DocumentSection doc={doc} />}
 
       {has && union && (
-        <Section title="Dimensionen">
+        <Section title="Position und Größe">
           <div className="dims">
             <AnchorPicker value={settings.anchor} onChange={(anchor) => setSettings({ anchor })} />
             <div className="grid2">
-            <NumField label="X" value={union.x + settings.anchor[0] * union.w} onCommit={(x) => A.setAnchored({ x })} />
-            <NumField label="Y" value={union.y + settings.anchor[1] * union.h} onCommit={(y) => A.setAnchored({ y })} />
-            <NumField label="B" value={union.w} onCommit={(w) => A.setAnchored(settings.keepRatio && union.w ? { w, h: (union.h * w) / union.w } : { w })} />
-            <div className="with-btn">
+              <NumField label="X" value={union.x + settings.anchor[0] * union.w} onCommit={(x) => A.setAnchored({ x })} />
+              <NumField label="Y" value={union.y + settings.anchor[1] * union.h} onCommit={(y) => A.setAnchored({ y })} />
+              <NumField label="B" value={union.w} onCommit={(w) => A.setAnchored(settings.keepRatio && union.w ? { w, h: (union.h * w) / union.w } : { w })} />
               <NumField label="H" value={union.h} onCommit={(h) => A.setAnchored(settings.keepRatio && union.h ? { h, w: (union.w * h) / union.h } : { h })} />
-              <IconBtn title="Seitenverhältnis sperren" icon={settings.keepRatio ? <Lock size={14} /> : <Unlock size={14} />} active={settings.keepRatio} onClick={() => setSettings({ keepRatio: !settings.keepRatio })} />
-            </div>
             </div>
           </div>
           <div className="row gap">
-            <NumField label="Skal." value={scalePct} suffix="%" onCommit={setScalePct} />
-            <button className="btn" onClick={() => A.scaleSelection(scalePct / 100)}>Anwenden</button>
+            <IconBtn title="Seitenverhältnis sperren" className="field-btn" icon={settings.keepRatio ? <Lock size={14} /> : <Unlock size={14} />} active={settings.keepRatio} onClick={() => setSettings({ keepRatio: !settings.keepRatio })} />
+            <NumField label="Skal." value={scalePct} suffix="%" onCommit={(v) => { setScalePct(v); A.scaleSelection(v / 100); }} title="Enter skaliert um diesen Wert" />
             <button className="btn sm" title="Verkleinern 10 %" onClick={() => A.scaleSelection(1 / 1.1)}>−</button>
             <button className="btn sm" title="Vergrößern 10 %" onClick={() => A.scaleSelection(1.1)}>+</button>
           </div>
           <div className="row gap">
             <NumField label="∠" value={rot} suffix="°" onCommit={setRot} />
-            <IconBtn title={`−${rot}° drehen`} icon={<RotateCcw size={15} />} onClick={() => A.rotateSelection(-rot)} />
-            <IconBtn title={`+${rot}° drehen`} icon={<RotateCw size={15} />} onClick={() => A.rotateSelection(rot)} />
-            <IconBtn title="Horizontal spiegeln" icon={<FlipHorizontal2 size={15} />} onClick={() => A.flip('h')} />
-            <IconBtn title="Vertikal spiegeln" icon={<FlipVertical2 size={15} />} onClick={() => A.flip('v')} />
+            <IconBtn title={`−${rot}° drehen`} className="field-btn" icon={<RotateCcw size={15} />} onClick={() => A.rotateSelection(-rot)} />
+            <IconBtn title={`+${rot}° drehen`} className="field-btn" icon={<RotateCw size={15} />} onClick={() => A.rotateSelection(rot)} />
+            {/* lucide's FlipHorizontal2 draws a horizontal mirror line (= vertical flip), so the icons are swapped on purpose */}
+            <IconBtn title="Horizontal spiegeln (links ↔ rechts)" className="field-btn" icon={<FlipVertical2 size={15} />} onClick={() => A.flip('h')} />
+            <IconBtn title="Vertikal spiegeln (oben ↔ unten)" className="field-btn" icon={<FlipHorizontal2 size={15} />} onClick={() => A.flip('v')} />
           </div>
         </Section>
       )}
 
-      {has && (
-        <Section title="Ausrichten & Anordnen" defaultOpen={false}>
-          <div className="row icons">
-            <IconBtn title="Links" icon={<AlignStartVertical size={15} />} onClick={() => A.align('left', toDoc)} />
-            <IconBtn title="Horizontal zentriert" icon={<AlignCenterVertical size={15} />} onClick={() => A.align('hcenter', toDoc)} />
-            <IconBtn title="Rechts" icon={<AlignEndVertical size={15} />} onClick={() => A.align('right', toDoc)} />
-            <IconBtn title="Oben" icon={<AlignStartHorizontal size={15} />} onClick={() => A.align('top', toDoc)} />
-            <IconBtn title="Vertikal zentriert" icon={<AlignCenterHorizontal size={15} />} onClick={() => A.align('vcenter', toDoc)} />
-            <IconBtn title="Unten" icon={<AlignEndHorizontal size={15} />} onClick={() => A.align('bottom', toDoc)} />
-            <IconBtn title="Horizontal verteilen" icon={<AlignHorizontalDistributeCenter size={15} />} onClick={() => A.distribute('h')} />
-            <IconBtn title="Vertikal verteilen" icon={<AlignVerticalDistributeCenter size={15} />} onClick={() => A.distribute('v')} />
-          </div>
-          <Toggle label="Am Dokument ausrichten" checked={toDoc || els.length === 1} onChange={setToDoc} />
-          <div className="row icons">
-            <IconBtn title="Ganz nach vorne (⇧⌘])" icon={<BringToFront size={15} />} onClick={() => A.arrange('front')} />
-            <IconBtn title="Eine Ebene nach vorne (⌘])" icon={<ArrowUp size={15} />} onClick={() => A.arrange('forward')} />
-            <IconBtn title="Eine Ebene nach hinten (⌘[)" icon={<ArrowDown size={15} />} onClick={() => A.arrange('backward')} />
-            <IconBtn title="Ganz nach hinten (⇧⌘[)" icon={<SendToBack size={15} />} onClick={() => A.arrange('back')} />
-            <IconBtn title="Gruppieren (⌘G)" icon={<Group size={15} />} onClick={A.groupSelection} />
-            <IconBtn title="Gruppierung aufheben (⇧⌘G)" icon={<Ungroup size={15} />} onClick={A.ungroupSelection} />
-            <IconBtn title="Duplizieren (⌘D)" icon={<Copy size={15} />} onClick={A.duplicateSelection} />
-            <IconBtn title="Löschen (⌫)" icon={<Trash2 size={15} />} onClick={A.deleteSelection} />
-          </div>
-        </Section>
-      )}
+      {has && <AlignSection count={els.length} />}
 
       {has && (
         <Section title="Erscheinungsbild">
@@ -125,77 +110,150 @@ export function Properties() {
           <div className="row">
             <span className="lbl">Linienende</span>
             <Segmented value={eff('stroke-linecap', 'butt')} onChange={(v) => A.setProps({ 'stroke-linecap': v }, 'Linienende')}
-              options={[{ value: 'butt', label: <CapIcon t="butt" />, title: 'Butt' }, { value: 'round', label: <CapIcon t="round" />, title: 'Rund' }, { value: 'square', label: <CapIcon t="square" />, title: 'Quadratisch' }]} />
+              options={[{ value: 'butt', label: <CapIcon t="butt" />, title: 'Flach' }, { value: 'round', label: <CapIcon t="round" />, title: 'Rund' }, { value: 'square', label: <CapIcon t="square" />, title: 'Quadratisch' }]} />
           </div>
-          <div className="row">
-            <span className="lbl">Ecken</span>
-            <Segmented value={eff('stroke-linejoin', 'miter')} onChange={(v) => A.setProps({ 'stroke-linejoin': v }, 'Ecken')}
-              options={[{ value: 'miter', label: <JoinIcon t="miter" />, title: 'Spitz (Miter)' }, { value: 'round', label: <JoinIcon t="round" />, title: 'Rund' }, { value: 'bevel', label: <JoinIcon t="bevel" />, title: 'Abgeflacht (Bevel)' }]} />
-          </div>
-          <div className="row">
-            <span className="lbl">Füllregel</span>
-            <Segmented value={eff('fill-rule', 'nonzero')} onChange={(v) => A.setProps({ 'fill-rule': v }, 'Füllregel')}
-              options={[{ value: 'nonzero', label: 'nonzero' }, { value: 'evenodd', label: 'evenodd' }]} />
-          </div>
-          <div className="row">
-            <span className="lbl">Strichelung</span>
-            <TextField value={eff('stroke-dasharray', '') ?? ''} placeholder="z. B. 4 2" mono onCommit={(v) => A.setProps({ 'stroke-dasharray': v.trim() || null }, 'Strichelung')} />
-          </div>
-          <Toggle label="Farben auf Gruppeninhalt anwenden" checked={settings.deepColor} onChange={(v) => setSettings({ deepColor: v })} />
+          {more && (
+            <>
+              <div className="row">
+                <span className="lbl">Ecken</span>
+                <Segmented value={eff('stroke-linejoin', 'miter')} onChange={(v) => A.setProps({ 'stroke-linejoin': v }, 'Ecken')}
+                  options={[{ value: 'miter', label: <JoinIcon t="miter" />, title: 'Spitz (Miter)' }, { value: 'round', label: <JoinIcon t="round" />, title: 'Rund' }, { value: 'bevel', label: <JoinIcon t="bevel" />, title: 'Abgeflacht (Bevel)' }]} />
+              </div>
+              <div className="row">
+                <span className="lbl">Füllregel</span>
+                <Segmented value={eff('fill-rule', 'nonzero')} onChange={(v) => A.setProps({ 'fill-rule': v }, 'Füllregel')}
+                  options={[{ value: 'nonzero', label: 'nonzero' }, { value: 'evenodd', label: 'evenodd' }]} />
+              </div>
+              <div className="row">
+                <span className="lbl">Strichelung</span>
+                <TextField value={eff('stroke-dasharray', '') ?? ''} placeholder="z. B. 4 2" mono onCommit={(v) => A.setProps({ 'stroke-dasharray': v.trim() || null }, 'Strichelung')} />
+              </div>
+              <Toggle label="Farben auf Gruppeninhalt anwenden" checked={settings.deepColor} onChange={(v) => setSettings({ deepColor: v })} />
+            </>
+          )}
+          <button className="link-btn" onClick={() => setMore(!more)}>{more ? 'Weniger Optionen' : 'Ecken, Füllregel, Strichelung …'}</button>
         </Section>
       )}
 
       {has && (
-        <Section title="Pfad-Werkzeuge">
-          <div className="row gap">
-            <NumField label="Offset" value={settings.offsetDistance} step={0.5} onCommit={(v) => setSettings({ offsetDistance: Math.abs(v) })} />
-            <button className="btn primary" title="Nach außen vergrößern" onClick={() => A.offsetSelection(settings.offsetDistance)}>Außen</button>
-            <button className="btn" title="Nach innen verkleinern" onClick={() => A.offsetSelection(-settings.offsetDistance)}>Innen</button>
+        <Section title="Anordnen" defaultOpen={false}>
+          <div className="row icons">
+            <IconBtn title="Ganz nach vorne (⇧⌘])" icon={<BringToFront size={15} />} onClick={() => A.arrange('front')} />
+            <IconBtn title="Eine Ebene nach vorne (⌘])" icon={<ArrowUp size={15} />} onClick={() => A.arrange('forward')} />
+            <IconBtn title="Eine Ebene nach hinten (⌘[)" icon={<ArrowDown size={15} />} onClick={() => A.arrange('backward')} />
+            <IconBtn title="Ganz nach hinten (⇧⌘[)" icon={<SendToBack size={15} />} onClick={() => A.arrange('back')} />
+            <IconBtn title="Gruppieren (⌘G)" icon={<Group size={15} />} onClick={A.groupSelection} />
+            <IconBtn title="Gruppierung aufheben (⇧⌘G)" icon={<Ungroup size={15} />} onClick={A.ungroupSelection} />
+            <IconBtn title="Duplizieren (⌘D)" icon={<Copy size={15} />} onClick={A.duplicateSelection} />
+            <IconBtn title="Löschen (⌫)" icon={<Trash2 size={15} />} onClick={A.deleteSelection} />
           </div>
-          <div className="row">
-            <span className="lbl">Modus</span>
-            <Segmented value={settings.offsetKind} onChange={(v) => setSettings({ offsetKind: v })}
-              options={[
-                { value: 'area', label: 'Fläche', title: 'Sichtbare Form (Füllung + Kontur) wachsen/schrumpfen lassen' },
-                { value: 'parallel', label: 'Parallele', title: 'Parallele Linie zum Pfad (Kurven bleiben erhalten)' },
-              ]} />
-          </div>
-          <div className="row">
-            <span className="lbl">Ecken</span>
-            <Segmented value={settings.offsetJoin} onChange={(v) => setSettings({ offsetJoin: v })}
-              options={[{ value: 'miter', label: <JoinIcon t="miter" />, title: 'Spitz' }, { value: 'round', label: <JoinIcon t="round" />, title: 'Rund' }, { value: 'bevel', label: <JoinIcon t="bevel" />, title: 'Abgeflacht' }]} />
-          </div>
-          <Toggle label="Als Kopie erzeugen" checked={settings.offsetCopy} onChange={(v) => setSettings({ offsetCopy: v })} />
-          <div className="sub">Ecken abrunden</div>
-          <div className="row gap">
-            <NumField label="Radius" value={els.length === 1 && els[0].localName === 'rect' ? parseFloat(els[0].getAttribute('rx') || els[0].getAttribute('ry') || '0') : settings.cornerRadius}
-              step={1} onCommit={(v) => { setSettings({ cornerRadius: Math.max(0, v) }); A.roundSelectedCorners(Math.max(0, v)); }} />
-            <button className="btn" title="Ecken mit dem Radius abrunden" onClick={() => A.roundSelectedCorners()}><CornerIcon /> Abrunden</button>
-          </div>
-          <div className="sub">Kombinieren</div>
-          <div className="bool-row">
-            <button className="btn" title="Verbinden (Vereinigung, OR)" onClick={() => A.booleanSelection('union')}><BoolIcon op="union" /> Verbinden</button>
-            <button className="btn" title="Ausschneiden: obere Elemente vom untersten abziehen" onClick={() => A.booleanSelection('subtract')}><BoolIcon op="subtract" /> Ausschneiden</button>
-            <button className="btn" title="Schnittmenge (AND)" onClick={() => A.booleanSelection('intersect')}><BoolIcon op="intersect" /> Schnittmenge</button>
-            <button className="btn" title="Überlappung ausschließen (XOR)" onClick={() => A.booleanSelection('exclude')}><BoolIcon op="exclude" /> Ausschließen</button>
-          </div>
-          <div className="btn-col">
-            <button className="btn" onClick={A.expandStroke}>Kontur in Fläche umwandeln</button>
-            <button className="btn" onClick={A.convertToPath}>In Pfad umwandeln</button>
-            <button className="btn" onClick={A.applyTransforms}>Transformationen anwenden</button>
-          </div>
-          <Toggle label="Transformationen direkt in Geometrie schreiben" checked={settings.autoBake} onChange={(v) => setSettings({ autoBake: v })} />
-          <Toggle label="Konturbreite mitskalieren" checked={settings.scaleStrokes} onChange={(v) => setSettings({ scaleStrokes: v })} />
         </Section>
       )}
 
       {els.length === 1 && <Attributes el={els[0]} id={selection[0]} />}
-
-      {!has && <DocumentSection doc={doc} />}
-      <ColorsSection doc={doc} />
     </div>
   );
 }
+
+function AlignSection({ count }: { count: number }) {
+  const [target, setTarget] = useState<'sel' | 'doc'>('sel');
+  const toDoc = target === 'doc' || count === 1;
+  return (
+    <Section title="Ausrichten">
+      <div className="align-grid">
+        <IconBtn title="Links" icon={<AlignStartVertical size={15} />} onClick={() => A.align('left', toDoc)} />
+        <IconBtn title="Horizontal zentriert" icon={<AlignCenterVertical size={15} />} onClick={() => A.align('hcenter', toDoc)} />
+        <IconBtn title="Rechts" icon={<AlignEndVertical size={15} />} onClick={() => A.align('right', toDoc)} />
+        <IconBtn title="Oben" icon={<AlignStartHorizontal size={15} />} onClick={() => A.align('top', toDoc)} />
+        <IconBtn title="Vertikal zentriert" icon={<AlignCenterHorizontal size={15} />} onClick={() => A.align('vcenter', toDoc)} />
+        <IconBtn title="Unten" icon={<AlignEndHorizontal size={15} />} onClick={() => A.align('bottom', toDoc)} />
+      </div>
+      {count > 1 && (
+        <Segmented value={target} onChange={setTarget}
+          options={[{ value: 'sel', label: 'An Auswahl' }, { value: 'doc', label: 'An Dokument' }]} />
+      )}
+      {count === 1 && <div className="hint">Ein Element wird am Dokument ausgerichtet.</div>}
+      {count > 2 && (
+        <div className="grid2">
+          <button className="btn" onClick={() => A.distribute('h')}><AlignHorizontalDistributeCenter size={15} /> Horizontal</button>
+          <button className="btn" onClick={() => A.distribute('v')}><AlignVerticalDistributeCenter size={15} /> Vertikal</button>
+        </div>
+      )}
+    </Section>
+  );
+}
+
+/** Inspector tab "Pfad": offset, corners, booleans, conversions */
+export function PathTab() {
+  const { els } = useSelection();
+  const settings = useStore((s) => s.settings);
+  const setSettings = useStore((s) => s.setSettings);
+  if (!els.length) return <div className="panel-empty">Ein oder mehrere Elemente auswählen, um Pfad-Werkzeuge zu nutzen.</div>;
+  const rectR = els.length === 1 && els[0].localName === 'rect' ? parseFloat(els[0].getAttribute('rx') || els[0].getAttribute('ry') || '0') : null;
+  const radius = rectR ?? settings.cornerRadius;
+  return (
+    <div className="props cards">
+      <div className="card">
+        <div className="sub">Offset</div>
+        <div className="row gap">
+          <button className="btn sm" title="Abstand verringern" onClick={() => setSettings({ offsetDistance: Math.max(0, +(settings.offsetDistance - 0.5).toFixed(3)) })}>−</button>
+          <NumField label="Abstand" value={settings.offsetDistance} step={0.5} onCommit={(v) => setSettings({ offsetDistance: Math.abs(v) })} />
+          <button className="btn sm" title="Abstand erhöhen" onClick={() => setSettings({ offsetDistance: +(settings.offsetDistance + 0.5).toFixed(3) })}>+</button>
+        </div>
+        <Segmented value={settings.offsetKind} onChange={(v) => setSettings({ offsetKind: v })}
+          options={[
+            { value: 'area', label: 'Fläche', title: 'Sichtbare Form (Füllung + Kontur) wachsen/schrumpfen lassen' },
+            { value: 'parallel', label: 'Parallele', title: 'Parallele Linie zum Pfad (Kurven bleiben erhalten)' },
+          ]} />
+        <Segmented value={settings.offsetJoin} onChange={(v) => setSettings({ offsetJoin: v })}
+          options={[{ value: 'round', label: <><JoinIcon t="round" /> Rund</>, title: 'Rund' }, { value: 'miter', label: <><JoinIcon t="miter" /> Spitz</>, title: 'Spitz' }, { value: 'bevel', label: <><JoinIcon t="bevel" /> Flach</>, title: 'Abgeflacht' }]} />
+        <Toggle label="Als Kopie erzeugen" checked={settings.offsetCopy} onChange={(v) => setSettings({ offsetCopy: v })} />
+        <div className="grid2">
+          <button className="btn" title="Nach innen verkleinern" onClick={() => A.offsetSelection(-settings.offsetDistance)}>Nach innen</button>
+          <button className="btn primary" title="Nach außen vergrößern" onClick={() => A.offsetSelection(settings.offsetDistance)}>Nach außen</button>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="sub">Ecken abrunden</div>
+        <div className="row gap">
+          <input type="range" min={0} max={Math.max(50, radius)} step={0.5} value={radius} className="slider" aria-label="Radius"
+            onChange={(e) => setSettings({ cornerRadius: +e.target.value })}
+            onPointerUp={(e) => A.roundSelectedCorners(+(e.target as HTMLInputElement).value)} />
+          <div className="w72"><NumField value={radius} step={1} onCommit={(v) => { setSettings({ cornerRadius: Math.max(0, v) }); A.roundSelectedCorners(Math.max(0, v)); }} /></div>
+        </div>
+        <button className="btn" onClick={() => A.roundSelectedCorners()}><CornerIcon /> Abrunden</button>
+      </div>
+
+      <div className="card">
+        <div className="sub">Kombinieren</div>
+        <div className="bool-row">
+          {BOOL_OPS.map(([op, label, title]) => (
+            <button key={op} className="btn" title={title} disabled={els.length < 2} onClick={() => A.booleanSelection(op)}><BoolIcon op={op} /> {label}</button>
+          ))}
+        </div>
+        <div className="hint">{els.length < 2 ? 'Mindestens zwei Elemente auswählen.' : 'Das unterste Element bestimmt Farbe und Position.'}</div>
+      </div>
+
+      <div className="card plain">
+        <div className="sub">Umwandeln</div>
+        <button className="btn list" onClick={A.expandStroke}>Kontur in Fläche</button>
+        <button className="btn list" onClick={A.convertToPath}>In Pfad umwandeln</button>
+        <button className="btn list" onClick={A.applyTransforms}>Transformationen anwenden</button>
+        <button className="btn list" disabled={els.length !== 1} onClick={A.editSelectedNodes}>Knoten bearbeiten<kbd>Enter</kbd></button>
+        <Toggle label="Transformationen direkt in Geometrie schreiben" checked={settings.autoBake} onChange={(v) => setSettings({ autoBake: v })} />
+        <Toggle label="Konturbreite mitskalieren" checked={settings.scaleStrokes} onChange={(v) => setSettings({ scaleStrokes: v })} />
+      </div>
+    </div>
+  );
+}
+
+export const BOOL_OPS = [
+  ['union', 'Verbinden', 'Verbinden (Vereinigung, OR)'],
+  ['subtract', 'Ausschneiden', 'Ausschneiden: obere Elemente vom untersten abziehen'],
+  ['intersect', 'Schnittmenge', 'Schnittmenge (AND)'],
+  ['exclude', 'Ausschluss', 'Überlappung ausschließen (XOR)'],
+] as const;
 
 const ANCHOR_NAMES = [['oben links', 'oben mittig', 'oben rechts'], ['mitte links', 'Mitte', 'mitte rechts'], ['unten links', 'unten mittig', 'unten rechts']];
 
@@ -245,7 +303,7 @@ function Attributes({ el, id }: { el: Element; id: string }) {
   const [name, setName] = useState('');
   const attrs = Array.from(el.attributes);
   return (
-    <Section title={`Attribute <${el.localName}>`}>
+    <Section title="Attribute" defaultOpen={false}>
       <div className="attrs">
         {attrs.map((a) => (
           <div className="attr" key={a.name}>
@@ -280,6 +338,8 @@ function AttrArea({ value, onCommit }: { value: string; onCommit: (v: string) =>
   );
 }
 
+const SIZE_PRESETS = [16, 20, 24, 32, 48, 64, 128, 256];
+
 function DocumentSection({ doc }: { doc: Document }) {
   const root = doc.documentElement;
   const size = docSize(root);
@@ -287,30 +347,50 @@ function DocumentSection({ doc }: { doc: Document }) {
     const s = { ...size, ...p };
     A.setDocAttrs({ viewBox: `${s.x} ${s.y} ${s.w} ${s.h}` });
   };
+  const w = root.getAttribute('width'), h = root.getAttribute('height');
+  const square = size.w === size.h;
   return (
-    <Section title="Dokument">
-      <div className="sub">viewBox</div>
-      <div className="grid2">
-        <NumField label="X" value={size.x} onCommit={(x) => setVB({ x })} />
-        <NumField label="Y" value={size.y} onCommit={(y) => setVB({ y })} />
-        <NumField label="B" value={size.w} onCommit={(w) => setVB({ w })} />
-        <NumField label="H" value={size.h} onCommit={(h) => setVB({ h })} />
-      </div>
-      <div className="sub">Ausgabegröße (width / height)</div>
-      <div className="grid2">
-        <TextField value={root.getAttribute('width') ?? ''} placeholder="auto" mono onCommit={(v) => A.setDocAttrs({ width: v.trim() || null })} />
-        <TextField value={root.getAttribute('height') ?? ''} placeholder="auto" mono onCommit={(v) => A.setDocAttrs({ height: v.trim() || null })} />
-      </div>
-      <div className="hint">Tipp: ⌘A wählt alles, Doppelklick betritt Gruppen bzw. bearbeitet Pfad-Knoten.</div>
-    </Section>
+    <>
+      <div className="sel-head"><span className="tag">svg</span><span className="sel-name">Dokument</span></div>
+      <Section title="Zeichenfläche (viewBox)">
+        <div className="grid2">
+          <NumField label="X" value={size.x} onCommit={(x) => setVB({ x })} />
+          <NumField label="Y" value={size.y} onCommit={(y) => setVB({ y })} />
+          <NumField label="B" value={size.w} onCommit={(w) => setVB({ w })} />
+          <NumField label="H" value={size.h} onCommit={(h) => setVB({ h })} />
+        </div>
+        <button className="btn" onClick={() => A.fitDocumentToContent()} title="viewBox genau um die Zeichnung legen">An Inhalt anpassen</button>
+      </Section>
+      <Section title="Ausgabegröße">
+        <div className="grid2">
+          <TextField value={w ?? ''} placeholder="auto" mono onCommit={(v) => A.setDocAttrs({ width: v.trim() || null })} />
+          <TextField value={h ?? ''} placeholder="auto" mono onCommit={(v) => A.setDocAttrs({ height: v.trim() || null })} />
+        </div>
+        <div className="chips">
+          {SIZE_PRESETS.map((n) => {
+            const on = w === String(n) && (square ? h === String(n) : true);
+            return (
+              <button key={n} className={`chip ${on ? 'on' : ''}`} title={`width/height auf ${n} px (Seitenverhältnis der viewBox)`}
+                onClick={() => A.setDocAttrs({ width: String(n), height: String(+(n * size.h / size.w).toFixed(3)) })}>{n}</button>
+            );
+          })}
+          <button className={`chip ${!w && !h ? 'on' : ''}`} title="width/height entfernen – skaliert frei" onClick={() => A.setDocAttrs({ width: null, height: null })}>auto</button>
+        </div>
+      </Section>
+      <div className="hint pad">Tipp: ⌘K öffnet die Befehlssuche, ⌘A wählt alles, Doppelklick betritt Gruppen bzw. bearbeitet Pfad-Knoten.</div>
+    </>
   );
 }
 
-function ColorsSection({ doc }: { doc: Document }) {
+/** Colors used in the document – click one to replace it everywhere */
+export function DocColors() {
+  const doc = useDoc();
+  if (!doc) return null;
   const colors = listColors(doc);
   return (
-    <Section title="Farben im Dokument">
-      {!colors.length && <div className="hint">Keine expliziten Farben gefunden.</div>}
+    <div className="doc-colors">
+      <div className="sub">Farben im Dokument</div>
+      {!colors.length && <div className="hint">Keine expliziten Farben.</div>}
       <div className="palette">
         {colors.map((c, i) => (
           <label key={i} className="swatch big" style={{ background: c.color }} title={`${c.color} · ${c.count}× – klicken zum Ersetzen`}>
@@ -319,43 +399,75 @@ function ColorsSection({ doc }: { doc: Document }) {
           </label>
         ))}
       </div>
-    </Section>
+    </div>
   );
 }
 
-function NodeSection({ doc, id }: { doc: Document; id: string }) {
+/** Inspector tab "Knoten" while a path is in node editing */
+export function NodeTab() {
+  const doc = useDoc();
+  const id = useStore((s) => s.nodeEdit);
   const nodeSel = useStore((s) => s.nodeSel);
   const smoothNodes = useStore((s) => s.smoothNodes);
-  const el = getEl(doc, id);
+  const el = doc && id ? getEl(doc, id) : null;
   const subs = useMemo(() => toNodes(el?.getAttribute('d') ?? ''), [el]);
+  if (!el) return <div className="panel-empty">Kein Pfad in Bearbeitung.</div>;
   const node = nodeSel ? subs[nodeSel.s]?.nodes[nodeSel.j] : null;
   const kind = node ? A.effNodeKind(node, nodeSel!, smoothNodes) : null;
   const total = subs.reduce((n, sp) => n + sp.nodes.length, 0);
+  const index = nodeSel ? subs.slice(0, nodeSel.s).reduce((n, sp) => n + sp.nodes.length, 0) + nodeSel.j + 1 : 0;
+  const sp = nodeSel ? subs[nodeSel.s] : subs.length === 1 ? subs[0] : null;
+  const closed = sp ? sp.closed : subs.every((x) => x.closed);
   const opts = (['corner', 'smooth', 'symmetric'] as const).map((k) => ({
     value: k, label: <span className="nk"><NodeKindIcon kind={k} /><span className="nk-t">{A.NODE_LABELS[k]}</span></span>, title: A.NODE_LABELS[k],
   }));
+  const len = (h: { x: number; y: number } | null) => (h && node ? +Math.hypot(h.x - node.x, h.y - node.y).toFixed(2) : null);
   return (
-    <Section title="Knoten">
-      <div className="hint">
-        {node ? `Knoten ${nodeSel!.j + 1}${subs.length > 1 ? ` (Teilpfad ${nodeSel!.s + 1})` : ''} · x ${+node.x.toFixed(2)}, y ${+node.y.toFixed(2)}` : `${total} Knoten – einen Knoten anklicken`}
+    <div className="props cards">
+      <div className="sel-head">
+        <span className="tag">path</span>
+        <span className="sel-name">{el.getAttribute('id') || 'Pfad'}</span>
+        <button className="btn sm primary" onClick={() => useStore.getState().set({ nodeEdit: null })}>Fertig</button>
       </div>
-      <div className="sub">Ausgewählter Knoten</div>
-      <div className={node ? '' : 'inactive'}>
-        <Segmented value={kind} options={opts} onChange={(k) => node && A.setSelectedNodeKind(k)} />
+      <div className={`card ${node ? '' : 'muted-card'}`}>
+        <div className="row">
+          <span className="sub grow">Ausgewählter Knoten</span>
+          <span className="hint">{node ? `${index} von ${total}` : `${total} Knoten`}</span>
+        </div>
+        {node ? (
+          <>
+            <div className="grid2">
+              <NumField label="X" value={node.x} onCommit={(x) => A.setNodePos({ x })} />
+              <NumField label="Y" value={node.y} onCommit={(y) => A.setNodePos({ y })} />
+            </div>
+            <Segmented value={kind} options={opts} onChange={(k) => A.setSelectedNodeKind(k)} />
+            {(node.hin || node.hout) && <div className="hint">Anfasser: ein {len(node.hin) ?? '–'} · aus {len(node.hout) ?? '–'}</div>}
+            <div className="grid2">
+              <button className="btn" title="Geschlossenen Pfad hier öffnen bzw. offenen Pfad hier teilen" onClick={A.splitAtSelectedNode}><Scissors size={14} /> Auftrennen</button>
+              <button className="btn danger" title="Knoten löschen (Entf)" onClick={A.deleteSelectedNode}><Trash2 size={14} /> Löschen</button>
+            </div>
+          </>
+        ) : <div className="hint">Einen Knoten auf der Fläche anklicken.</div>}
       </div>
-      <button className="btn wide danger" disabled={!node} title="Knoten löschen (Entf)" onClick={A.deleteSelectedNode}><Trash2 size={14} /> Knoten löschen</button>
-      <div className="sub sep">Ganzer Pfad</div>
-      <select className="select" value="" title="Typ aller Knoten des Pfads auf einmal ändern"
-        onChange={(e) => { const k = e.target.value as NodeKind; if (k) A.setAllNodesKind(k); e.target.value = ''; }}>
-        <option value="" disabled>Alle {total} Knoten umwandeln in …</option>
-        {(['corner', 'smooth', 'symmetric'] as const).map((k) => <option key={k} value={k}>{A.NODE_LABELS[k]}</option>)}
-      </select>
-      <div className="hint">Doppelklick auf Knoten = Ecke ↔ Glatt · Doppelklick auf die Kontur = Knoten einfügen · ⌥ beim Ziehen eines Anfassers löst ihn vom Gegenstück</div>
-    </Section>
+
+      <div className="card dashed">
+        <div className="sub">{nodeSel && subs.length > 1 ? `Teilpfad ${nodeSel.s + 1} von ${subs.length}` : `Ganzer Pfad · ${total} Knoten`}</div>
+        <div className="grid2">
+          <button className="btn" onClick={() => A.setPathClosed(!closed)}>{closed ? 'Pfad öffnen' : 'Pfad schließen'}</button>
+          <button className="btn" onClick={A.reversePath}><ArrowLeftRight size={14} /> Umkehren</button>
+        </div>
+        <select className="select" value="" title="Typ aller Knoten des Pfads auf einmal ändern"
+          onChange={(e) => { const k = e.target.value as NodeKind; if (k) A.setAllNodesKind(k); e.target.value = ''; }}>
+          <option value="" disabled>Alle {total} Knoten umwandeln in …</option>
+          {(['corner', 'smooth', 'symmetric'] as const).map((k) => <option key={k} value={k}>{A.NODE_LABELS[k]}</option>)}
+        </select>
+      </div>
+      <div className="hint pad">Doppelklick auf Knoten = Ecke ↔ Glatt · Doppelklick auf die Kontur = Knoten einfügen · ⌥ beim Ziehen löst den Anfasser · Pfeiltasten verschieben</div>
+    </div>
   );
 }
 
-function NodeKindIcon({ kind }: { kind: 'corner' | 'smooth' | 'symmetric' }) {
+export function NodeKindIcon({ kind }: { kind: 'corner' | 'smooth' | 'symmetric' }) {
   return (
     <svg width="18" height="16" viewBox="0 0 18 16">
       {kind === 'corner'
@@ -414,13 +526,13 @@ function ShapeSection() {
   );
 }
 
-function CornerIcon() {
+export function CornerIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 14V8a6 6 0 0 1 6-6h6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
   );
 }
 
-function BoolIcon({ op }: { op: 'union' | 'subtract' | 'intersect' | 'exclude' }) {
+export function BoolIcon({ op }: { op: 'union' | 'subtract' | 'intersect' | 'exclude' }) {
   const a = 'M2 2h9v9H2z', b = 'M7 7h9v9H7z';
   const on = 'var(--accent-2)', off = 'none';
   return (

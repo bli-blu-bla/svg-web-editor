@@ -1,18 +1,17 @@
-import { useEffect, useRef, useState } from 'react';
-import {
-  MousePointer2, Spline, Hand, ZoomIn, ZoomOut, Scan, Undo2, Redo2, Grid3x3, Magnet, FilePlus2, FolderOpen, Download, Copy,
-  Layers as LayersIcon, SlidersHorizontal, Keyboard,
-} from 'lucide-react';
+import { useEffect, useRef } from 'react';
+import { ChevronDown, Download, FilePlus2, FolderOpen, Redo2, Search, Spline, Undo2 } from 'lucide-react';
 import { useStore } from './store';
 import * as A from './actions';
 import { Canvas } from './components/Canvas';
-import { Properties } from './components/Properties';
+import { DocColors } from './components/Properties';
 import { Layers } from './components/Layers';
-import { RightPanel } from './components/RightPanel';
-import { IconBtn } from './components/ui';
-import { ShapePicker } from './components/ShapePicker';
+import { ExportPane, Inspector } from './components/RightPanel';
+import { ToolRail } from './components/ToolRail';
+import { StatusBar } from './components/StatusBar';
+import { CommandPalette } from './components/CommandPalette';
+import { IconBtn, usePopover } from './components/ui';
 import { RecentMenu } from './components/RecentMenu';
-import { getEl, parseSvg, SHAPES } from './lib/svg';
+import { getEl, parseSvg, SHAPES, tryParse } from './lib/svg';
 
 function useShortcuts() {
   useEffect(() => {
@@ -23,6 +22,8 @@ function useShortcuts() {
       const mod = e.metaKey || e.ctrlKey;
       const k = e.key.toLowerCase();
       const stop = () => e.preventDefault();
+      if (mod && k === 'k') { stop(); s.set({ paletteOpen: !s.paletteOpen }); return; }
+      if (s.paletteOpen) return;
       if (mod && k === 'z') { stop(); if (e.shiftKey) s.redo(); else s.undo(); }
       else if (mod && k === 'y') { stop(); s.redo(); }
       else if (mod && k === 'a') { stop(); A.selectAll(); }
@@ -46,6 +47,7 @@ function useShortcuts() {
         const dx = k === 'arrowleft' ? -d : k === 'arrowright' ? d : 0, dy = k === 'arrowup' ? -d : k === 'arrowdown' ? d : 0;
         if (s.nodeEdit) { if (s.nodeSel) A.nudgeNode(dx, dy); } else A.nudge(dx, dy);
       } else if (k === 'escape') {
+        if (s.helpOpen) { s.set({ helpOpen: false }); return; }
         if (s.nodeEdit && s.nodeSel) s.set({ nodeSel: null });
         else if (s.nodeEdit) s.set({ nodeEdit: null });
         else if (s.selection.length) s.select([]);
@@ -67,6 +69,7 @@ function useShortcuts() {
         s.set({ tool: 'shape' });
       }
       else if (k === '#' || k === "'") s.setSettings({ grid: !s.settings.grid });
+      else if (k === '?') s.set({ helpOpen: !s.helpOpen });
     };
     const onPaste = (e: ClipboardEvent) => {
       if (typing(e.target)) return;
@@ -82,61 +85,89 @@ function useShortcuts() {
   }, []);
 }
 
-function Toolbar() {
-  const tool = useStore((s) => s.tool);
+function ZoomMenu() {
   const zoom = useStore((s) => s.zoom);
+  const { open, setOpen, ref } = usePopover();
+  const item = (label: string, keys: string, fn: () => void) => (
+    <button onClick={() => { fn(); setOpen(false); }}><span>{label}</span>{keys && <kbd>{keys}</kbd>}</button>
+  );
+  return (
+    <div className="pop-wrap" ref={ref}>
+      <button className="top-btn mono" title="Zoom" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {Math.round(zoom * 100)} %<ChevronDown size={13} />
+      </button>
+      {open && (
+        <div className="menu right">
+          {item('Hineinzoomen', '⌘+', () => A.zoomBy(1.25))}
+          {item('Herauszoomen', '⌘−', () => A.zoomBy(0.8))}
+          {item('Einpassen', '⌘0', A.fitView)}
+          <div className="menu-sep" />
+          {[0.5, 1, 2, 4, 8].map((z) => <div key={z}>{item(`${z * 100} %`, z === 1 ? '⌘1' : '', () => A.zoomTo(z))}</div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExportMenu() {
+  const { open, setOpen, ref } = usePopover();
+  return (
+    <div className="pop-wrap" ref={ref}>
+      <button className="top-btn primary" aria-expanded={open} onClick={() => setOpen(!open)}><Download size={15} /> Exportieren</button>
+      {open && <div className="menu right export-menu"><ExportPane /></div>}
+    </div>
+  );
+}
+
+/** Mode indicator in the top bar: node editing or inside a group */
+function ModeChip() {
+  const nodeEdit = useStore((s) => s.nodeEdit);
+  const scope = useStore((s) => s.scope);
+  const svg = useStore((s) => s.svg);
+  const set = useStore((s) => s.set);
+  if (!nodeEdit && !scope) return null;
+  const id = nodeEdit || scope;
+  const doc = tryParse(svg).doc;
+  const el = doc ? getEl(doc, id) : null;
+  const name = el?.getAttribute('id') || (nodeEdit ? 'Pfad' : 'Gruppe');
+  return (
+    <div className="mode-chip">
+      {nodeEdit ? <Spline size={15} /> : <FolderOpen size={15} />}
+      <span>{nodeEdit ? 'Knoten bearbeiten:' : 'In Gruppe:'} <b>{name}</b></span>
+      <button onClick={() => set(nodeEdit ? { nodeEdit: null } : { scope: '' })}>{nodeEdit ? 'Fertig' : 'Verlassen'}</button>
+    </div>
+  );
+}
+
+function TopBar() {
   const index = useStore((s) => s.index);
   const len = useStore((s) => s.history.length);
-  const settings = useStore((s) => s.settings);
-  const set = useStore((s) => s.set);
-  const setSettings = useStore((s) => s.setSettings);
   const undo = useStore((s) => s.undo);
   const redo = useStore((s) => s.redo);
+  const set = useStore((s) => s.set);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [help, setHelp] = useState(false);
 
   return (
     <header className="topbar">
-      <div className="brand"><img className="logo" src={`${import.meta.env.BASE_URL}logo.svg`} width={24} height={24} alt="" /> SVG Editor</div>
+      <img className="logo" src={`${import.meta.env.BASE_URL}logo.svg`} width={26} height={26} alt="SVG Editor" title="SVG Editor" />
       <div className="tgroup">
         <IconBtn title="Neues Dokument" icon={<FilePlus2 size={17} />} onClick={A.newDocument} />
         <IconBtn title="SVG öffnen (⌘O) – oder Datei auf die Fläche ziehen" icon={<FolderOpen size={17} />} onClick={() => fileRef.current?.click()} />
-        <IconBtn title="Herunterladen (⌘S)" icon={<Download size={17} />} onClick={() => A.download()} />
-        <IconBtn title="SVG kopieren" icon={<Copy size={17} />} onClick={A.copySvg} />
         <input id="file-input" ref={fileRef} type="file" accept=".svg,image/svg+xml" hidden
           onChange={(e) => { const f = e.target.files?.[0]; if (f) f.text().then((t) => A.loadSvg(t, `Datei ${f.name}`, f.name)); e.target.value = ''; }} />
       </div>
       <RecentMenu />
-      <div className="tgroup">
-        <IconBtn title="Auswahl (V)" icon={<MousePointer2 size={17} />} active={tool === 'select'} onClick={() => set({ tool: 'select' })} />
-        <IconBtn title="Knoten bearbeiten (A)" icon={<Spline size={17} />} active={tool === 'node'} onClick={() => set({ tool: 'node' })} />
-        <IconBtn title="Hand (H / Leertaste)" icon={<Hand size={17} />} active={tool === 'pan'} onClick={() => set({ tool: 'pan' })} />
-        <ShapePicker />
-      </div>
-      <div className="tgroup">
-        <IconBtn title="Herauszoomen (⌘−)" icon={<ZoomOut size={17} />} onClick={() => A.zoomBy(0.8)} />
-        <button className="zoomval" title="Auf 100 % (⌘1)" onClick={() => A.zoomTo(1)}>{Math.round(zoom * 100)}%</button>
-        <IconBtn title="Hineinzoomen (⌘+)" icon={<ZoomIn size={17} />} onClick={() => A.zoomBy(1.25)} />
-        <IconBtn title="Einpassen (⌘0)" icon={<Scan size={17} />} onClick={A.fitView} />
-      </div>
-      <div className="tgroup">
-        <IconBtn title="Raster" icon={<Grid3x3 size={17} />} active={settings.grid} onClick={() => setSettings({ grid: !settings.grid })} />
-        <IconBtn title={`Am Raster einrasten (${settings.snapStep})`} icon={<Magnet size={17} />} active={settings.snap} onClick={() => setSettings({ snap: !settings.snap })} />
-        {settings.snap && (
-          <select className="snapsel" value={settings.snapStep} onChange={(e) => setSettings({ snapStep: +e.target.value })} title="Rasterweite">
-            {[0.5, 1, 2, 4, 8, 10, 16].map((v) => <option key={v} value={v}>{v}</option>)}
-          </select>
-        )}
-      </div>
+      <ModeChip />
       <div className="spacer" />
       <div className="tgroup">
         <IconBtn title="Rückgängig (⌘Z)" icon={<Undo2 size={17} />} disabled={index === 0} onClick={undo} />
         <IconBtn title="Wiederholen (⇧⌘Z)" icon={<Redo2 size={17} />} disabled={index >= len - 1} onClick={redo} />
       </div>
-      <div className="tgroup">
-        <IconBtn title="Tastenkürzel" icon={<Keyboard size={17} />} active={help} onClick={() => setHelp(!help)} />
-      </div>
-      {help && <Shortcuts onClose={() => setHelp(false)} />}
+      <button className="search-btn" onClick={() => set({ paletteOpen: true })}>
+        <Search size={15} /><span>Befehl oder Werkzeug suchen …</span><kbd>⌘K</kbd>
+      </button>
+      <ZoomMenu />
+      <ExportMenu />
     </header>
   );
 }
@@ -146,9 +177,12 @@ const KEYS: [string, string][] = [
   ['⌘D', 'Duplizieren'], ['⌫', 'Löschen'], ['⌘G / ⇧⌘G', 'Gruppieren / aufheben'], ['⌘] / ⌘[', 'Nach vorne / hinten (⇧ = ganz)'],
   ['Pfeiltasten', 'Verschieben 1 (⇧ 10, ⌥ 0.1)'], ['⇧ beim Ziehen', 'Achse sperren / proportional / 15°-Schritte'], ['⌥ beim Skalieren', 'Von der Mitte aus'],
   ['⌘ + Klick', 'Tiefes Auswählen (in Gruppen)'], ['Doppelklick / Enter', 'Gruppe betreten / Knoten bearbeiten'], ['Esc', 'Auswahl aufheben / Modus verlassen'],
-  ['V / A / H', 'Auswahl / Knoten / Hand'], ['R / O / L / S', 'Rechteck / Kreis / Linie / Stern zeichnen'], ['Leertaste', 'Ansicht verschieben'], ['⌘ + Scroll', 'Zoomen'], ['⌘0 / ⌘1', 'Einpassen / 100 %'], ['⌘S / ⌘O', 'Speichern / Öffnen'],
+  ['⌘K', 'Befehlspalette: jeden Befehl suchen'], ['V / A / H', 'Auswahl / Knoten / Hand'], ['R / O / L / S', 'Rechteck / Kreis / Linie / Stern zeichnen'], ['Leertaste', 'Ansicht verschieben'], ['⌘ + Scroll', 'Zoomen'], ['⌘0 / ⌘1', 'Einpassen / 100 %'], ['⌘S / ⌘O', 'Speichern / Öffnen'],
 ];
-function Shortcuts({ onClose }: { onClose: () => void }) {
+function Shortcuts() {
+  const open = useStore((s) => s.helpOpen);
+  if (!open) return null;
+  const onClose = () => useStore.getState().set({ helpOpen: false });
   return (
     <div className="shortcuts" onClick={onClose}>
       <div className="sc-card" onClick={(e) => e.stopPropagation()}>
@@ -160,14 +194,11 @@ function Shortcuts({ onClose }: { onClose: () => void }) {
 }
 
 function LeftPanel() {
-  const [tab, setTab] = useState<'props' | 'layers'>('props');
   return (
-    <aside className="panel left">
-      <div className="tabs">
-        <button className={tab === 'props' ? 'on' : ''} onClick={() => setTab('props')}><SlidersHorizontal size={14} /> Eigenschaften</button>
-        <button className={tab === 'layers' ? 'on' : ''} onClick={() => setTab('layers')}><LayersIcon size={14} /> Ebenen</button>
-      </div>
-      <div className="panel-body">{tab === 'props' ? <Properties /> : <Layers />}</div>
+    <aside className="panel left" aria-label="Ebenen">
+      <div className="panel-head"><span className="sub">Ebenen</span></div>
+      <div className="panel-body"><Layers /></div>
+      <DocColors />
     </aside>
   );
 }
@@ -181,13 +212,17 @@ export default function App() {
   useShortcuts();
   return (
     <div className="app">
-      <Toolbar />
+      <TopBar />
       <main className="workspace">
+        <ToolRail />
         <LeftPanel />
         <div className="canvas-wrap"><Canvas /></div>
-        <RightPanel />
+        <Inspector />
       </main>
+      <StatusBar />
       <Toast />
+      <CommandPalette />
+      <Shortcuts />
     </div>
   );
 }

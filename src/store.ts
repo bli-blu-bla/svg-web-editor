@@ -9,6 +9,7 @@ import { docName, loadRecent, newDocId, saveRecent, upsertRecent, type RecentDoc
 
 export interface Entry { svg: string; label: string; time: number; key?: string }
 export type Tool = 'select' | 'node' | 'pan' | 'shape';
+export type InspectorTab = 'design' | 'path' | 'node' | 'code' | 'history';
 
 export interface Settings {
   precision: number;
@@ -37,6 +38,8 @@ export interface Settings {
   minMultipass: boolean;
   minKeepIds: boolean;
   minPretty: boolean;
+  /** floating action bar above the selection */
+  contextBar: boolean;
 }
 
 export interface Geo { union: Box | null; boxes: Record<string, Box> }
@@ -61,6 +64,11 @@ interface State {
   settings: Settings;
   clipboard: string[];
   toast: string | null;
+  inspectorTab: InspectorTab;
+  /** pointer position in document coordinates */
+  cursor: { x: number; y: number } | null;
+  paletteOpen: boolean;
+  helpOpen: boolean;
   /** id and name of the open document in the recent list */
   docId: string;
   docName: string;
@@ -96,7 +104,7 @@ const defaultSettings: Settings = {
   precision: 3, snap: false, snapStep: 1, grid: true, autoBake: true, scaleStrokes: true, deepColor: true, keepRatio: true, anchor: [0, 0],
   shape: 'rect', shapeFill: '#8b7cf6', shapeStroke: 'none', shapeStrokeWidth: 2, starPoints: 5, starInner: 0.45, polySides: 6, cornerRadius: 4,
   offsetDistance: 4, offsetKind: 'area', offsetJoin: 'round', offsetCopy: true, miterLimit: 4,
-  minMultipass: true, minKeepIds: false, minPretty: false,
+  minMultipass: true, minKeepIds: false, minPretty: false, contextBar: true,
 };
 
 const initial = loadDoc();
@@ -153,6 +161,10 @@ export const useStore = create<State>((set, get) => ({
   settings: load(LS_SET, defaultSettings),
   clipboard: [],
   toast: null,
+  inspectorTab: 'design',
+  cursor: null,
+  paletteOpen: false,
+  helpOpen: false,
   docId: initialId,
   docName: initialName,
   recent: initialRecent,

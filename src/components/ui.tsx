@@ -113,3 +113,18 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
     </label>
   );
 }
+
+/** Open state for a dropdown that closes on outside click or Escape */
+export function usePopover() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('pointerdown', close);
+    window.addEventListener('keydown', esc);
+    return () => { window.removeEventListener('pointerdown', close); window.removeEventListener('keydown', esc); };
+  }, [open]);
+  return { open, setOpen, ref };
+}
