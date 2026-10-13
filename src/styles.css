@@ -548,3 +548,14 @@ kbd { font: 11px 'JetBrains Mono', monospace; color: #c4c4cc; background: var(--
 .ov-cut-path { fill: none; stroke: var(--accent-2); stroke-width: 1.5; }
 .ov-cut { fill: #fff; stroke: var(--danger); stroke-width: 2; }
 .ov-ghost { fill: var(--accent-soft); stroke: var(--sel); stroke-width: 1.5; stroke-dasharray: 2 2; pointer-events: none; }
+
+/* ---------- boolean preview ---------- */
+.ov-bool-result { fill: var(--accent); fill-opacity: .35; stroke: none; }
+.ov-bool-base { fill: none; stroke: var(--accent-2); stroke-width: 2; }
+.ov-bool-cut { fill: var(--danger); fill-opacity: .12; stroke: var(--danger); stroke-width: 1.5; stroke-dasharray: 5 3; }
+.ov-bool-op { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 3; }
+.ov-tag text { fill: #fff; font: 600 11px Inter, system-ui, sans-serif; text-anchor: middle; }
+.ov-tag.base rect { fill: var(--accent); }
+.ov-tag.cut rect { fill: var(--danger); }
+.ov-tag.op rect { fill: var(--faint); }
+.bool-base .select { flex: 1; min-width: 0; }

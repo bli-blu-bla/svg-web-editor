@@ -443,8 +443,33 @@ export function offsetOp(doc: Document, ids: string[], o: OffsetOpts, prec: numb
 }
 
 /** Boolean combination of the selection (bottom-most element gives position and color) */
-export function booleanOp(doc: Document, ids: string[], op: BoolOp, prec: number): string[] {
+/**
+ * Operands of a boolean operation, base first. The base is the element the others are cut from
+ * and whose color and layer the result takes: the chosen one, else the first selected
+ * (click order; a marquee or Select All selects bottom to top), else the bottommost.
+ */
+export function boolOperands(doc: Document, ids: string[], baseId?: string | null): Element[] {
   const els = topmost(elsOf(doc, ids));
+  const byId = (id: string | null | undefined) => (id ? els.find((e) => idOf(e) === id) : undefined);
+  const base = byId(baseId) || byId(ids[0]) || els[0];
+  return base ? [base, ...els.filter((e) => e !== base)] : [];
+}
+
+/** Outlines (root coordinates) of base, cutters and result, to preview a boolean operation */
+export function boolPreview(doc: Document, ids: string[], op: BoolOp, baseId?: string | null) {
+  const els = boolOperands(doc, ids, baseId);
+  if (els.length < 2) return null;
+  const areas = els.map(elementArea);
+  return {
+    baseId: idOf(els[0]),
+    base: areaToD(areas[0], 3),
+    others: els.slice(1).map((e, i) => ({ id: idOf(e), d: areaToD(areas[i + 1], 3) })),
+    result: areaToD(booleanAreas(areas, op), 3),
+  };
+}
+
+export function booleanOp(doc: Document, ids: string[], op: BoolOp, prec: number, baseId?: string | null): string[] {
+  const els = boolOperands(doc, ids, baseId);
   if (els.length < 2) throw new Error('Mindestens 2 Elemente auswählen');
   const result = booleanAreas(els.map(elementArea), op);
   const bottom = els[0];

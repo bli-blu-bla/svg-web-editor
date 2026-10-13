@@ -5,6 +5,7 @@ import { getEl, tryParse } from './lib/svg';
 import type { JoinKind } from './lib/offset';
 import type { ShapeKind } from './lib/shapes';
 import type { NodeRef } from './lib/nodes';
+import type { BoolOp } from './lib/area';
 import { docName, loadRecent, newDocId, saveRecent, upsertRecent, type RecentDoc } from './lib/recent';
 import { loadSnapshots, moveSnapshots, saveSnapshots, type Snapshot } from './lib/snapshots';
 
@@ -79,6 +80,10 @@ interface State {
   recent: RecentDoc[];
   /** saved states of the open document, newest first */
   snapshots: Snapshot[];
+  /** boolean operation the pointer is over – the canvas previews it */
+  boolHover: BoolOp | null;
+  /** chosen base of boolean operations (null or not selected → bottommost selected element) */
+  boolBase: string | null;
   /** documents side by side on the canvas, left to right (the entry of the active one is synced on switch) */
   boards: Board[];
 
@@ -217,6 +222,8 @@ export const useStore = create<State>((set, get) => ({
   recent: initialRecent,
   snapshots: loadSnapshots(initialId),
   boards: initialBoards,
+  boolHover: null,
+  boolBase: null,
 
   commit: (svg, label, opts = {}) => {
     const s = get();
@@ -248,7 +255,8 @@ export const useStore = create<State>((set, get) => ({
   },
   select: (ids) => set((s) => {
     const nodeEdit = s.nodeEdit && ids.length === 1 && ids[0] === s.nodeEdit ? s.nodeEdit : null;
-    return { selection: ids, nodeEdit, nodeSel: nodeEdit ? s.nodeSel : null };
+    // element ids are positions, so a chosen boolean base is only valid for the selection it was chosen in
+    return { selection: ids, nodeEdit, nodeSel: nodeEdit ? s.nodeSel : null, boolBase: null };
   }),
   set: (p) => set(p),
   setSettings: (p) => {

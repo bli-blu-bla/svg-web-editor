@@ -5,8 +5,8 @@ import {
   apply, boxCorners, inv, matrixToString, mulAll, rotateAt, scaleAt, transformBox, translate, unionBoxes,
   type Box, type Mat, type Pt,
 } from '../lib/matrix';
-import { transformEach } from '../lib/ops';
-import { GRAPHIC, SHAPES, isUnder, parentId, renderMarkup, parentMatrix, localMatrix } from '../lib/svg';
+import { boolPreview, transformEach } from '../lib/ops';
+import { GRAPHIC, SHAPES, isUnder, parentId, renderMarkup, parentMatrix, localMatrix, tryParse } from '../lib/svg';
 import { elToRoot, liveEl, rootBBox, setLiveRoot, getLiveRoot } from '../lib/live';
 import { cloneSubs, fromNodes, insertNode, nearestOnPath, nodeKind, pointAt, toNodes, type NodeKind, type NodeRef, type PNode, type SubPath } from '../lib/nodes';
 import * as A from '../actions';
@@ -84,6 +84,13 @@ export function Canvas() {
   /** node editing: where a double-click would add a node */
   const [ghost, setGhost] = useState<Pt | null>(null);
   const selNode = useStore((s) => s.nodeSel);
+  const boolHover = useStore((s) => s.boolHover);
+  const boolBase = useStore((s) => s.boolBase);
+  const boolPv = useMemo(() => {
+    if (!boolHover || selection.length < 2) return null;
+    const { doc } = tryParse(svg);
+    try { return doc ? boolPreview(doc, selection, boolHover, boolBase) : null; } catch { return null; }
+  }, [boolHover, boolBase, selection, svg]);
   const setSelNode = (r: NodeRef | null) => set({ nodeSel: r });
 
   const markup = useMemo(() => renderMarkup(svg), [svg]);
@@ -719,6 +726,32 @@ export function Canvas() {
           const r = j === 0 && closing ? 6 : 4;
           return <rect key={j} className={`ov-anchor ${j === pen.length - 1 || (j === 0 && closing) ? 'on' : ''}`} x={a.x - r} y={a.y - r} width={2 * r} height={2 * r} />;
         })}
+      </g>,
+    );
+  }
+  if (boolPv && !dragM) {
+    // boolean preview: base solid, cutters dashed red, result filled
+    const cut = boolHover === 'subtract';
+    const vm = `matrix(${V.join(' ')})`;
+    const tag = (id: string, text: string, cls: string) => {
+      const b = rootBBox(id);
+      if (!b) return null;
+      const p = toVp({ x: b.x, y: b.y });
+      const w = text.length * 6.6 + 12;
+      return (
+        <g key={'t' + id} className={`ov-tag ${cls}`}>
+          <rect x={p.x} y={p.y - 22} width={w} height={18} rx={4} />
+          <text x={p.x + w / 2} y={p.y - 9}>{text}</text>
+        </g>
+      );
+    };
+    overlay.push(
+      <g key="bool">
+        <path className="ov-bool-result" d={boolPv.result} transform={vm} vectorEffect="non-scaling-stroke" />
+        {boolPv.others.map((o) => <path key={o.id} className={cut ? 'ov-bool-cut' : 'ov-bool-op'} d={o.d} transform={vm} vectorEffect="non-scaling-stroke" />)}
+        <path className="ov-bool-base" d={boolPv.base} transform={vm} vectorEffect="non-scaling-stroke" />
+        {boolPv.others.map((o) => tag(o.id, cut ? 'Schneidet' : 'Operand', cut ? 'cut' : 'op'))}
+        {tag(boolPv.baseId, 'Basis', 'base')}
       </g>,
     );
   }

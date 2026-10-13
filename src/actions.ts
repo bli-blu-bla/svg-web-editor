@@ -234,7 +234,8 @@ export function booleanSelection(op: BoolOp) {
   const ids = st().selection;
   const labels: Record<BoolOp, string> = { union: 'Verbinden', subtract: 'Ausschneiden', intersect: 'Schnittmenge', exclude: 'Ausschließen' };
   if (ids.length < 2) return st().notify('Mindestens 2 Elemente auswählen');
-  edit(labels[op], (doc) => ops.booleanOp(doc, ids, op, ctx().prec));
+  edit(labels[op], (doc) => ops.booleanOp(doc, ids, op, ctx().prec, st().boolBase));
+  st().set({ boolHover: null, boolBase: null });
 }
 export function expandStroke() {
   const ids = st().selection;

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { AlignCenterHorizontal, AlignCenterVertical, Copy, Plus, Scissors, Spline, Trash2 } from 'lucide-react';
 import { useStore } from '../store';
 import * as A from '../actions';
@@ -16,9 +17,12 @@ function Bar({ x, y, label, children }: { x: number; y: number; label: string; c
   );
 }
 
-function Btn({ title, onClick, children, on, text, danger }: { title: string; onClick: () => void; children: React.ReactNode; on?: boolean; text?: boolean; danger?: boolean }) {
+function Btn({ title, onClick, children, on, text, danger, onHover }: {
+  title: string; onClick: () => void; children: React.ReactNode; on?: boolean; text?: boolean; danger?: boolean; onHover?: (over: boolean) => void;
+}) {
   return (
-    <button className={`ctx-btn ${text ? 'text' : ''} ${on ? 'on' : ''} ${danger ? 'danger' : ''}`} title={title} aria-label={text ? undefined : title} aria-pressed={on} onClick={onClick}>
+    <button className={`ctx-btn ${text ? 'text' : ''} ${on ? 'on' : ''} ${danger ? 'danger' : ''}`} title={title} aria-label={text ? undefined : title} aria-pressed={on} onClick={onClick}
+      onMouseEnter={onHover && (() => onHover(true))} onMouseLeave={onHover && (() => onHover(false))}>
       {children}
     </button>
   );
@@ -32,6 +36,8 @@ export function ContextBar({ x, y, count }: { x: number; y: number; count: numbe
   const svg = useStore((s) => s.svg);
   const selection = useStore((s) => s.selection);
   const multi = count > 1;
+  // the bar disappears while dragging etc. – don't leave a boolean preview behind
+  useEffect(() => () => set({ boolHover: null }), [set]);
   let canNodes = false;
   if (count === 1) {
     try { const el = getEl(parseSvg(svg), selection[0]); canNodes = !!el && (el.localName === 'path' || SHAPES.has(el.localName)); } catch { /* ignore */ }
@@ -42,7 +48,8 @@ export function ContextBar({ x, y, count }: { x: number; y: number; count: numbe
       {multi && (
         <>
           {BOOL_OPS.map(([op, label, title]) => (
-            <Btn key={op} title={`${label} – ${title}`} onClick={() => A.booleanSelection(op)}><BoolIcon op={op} /></Btn>
+            <Btn key={op} title={`${label} – ${title}`} onClick={() => A.booleanSelection(op)}
+              onHover={(over) => set({ boolHover: over ? op : null })}><BoolIcon op={op} /></Btn>
           ))}
           <Sep />
         </>

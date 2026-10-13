@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
   AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, FlipHorizontal2, FlipVertical2, RotateCcw, RotateCw,
@@ -9,7 +9,8 @@ import { SHAPE_LABELS } from '../lib/shapes';
 import { toNodes, type NodeKind } from '../lib/nodes';
 import { ShapeIcon, SHAPE_ORDER } from './ShapePicker';
 import * as A from '../actions';
-import { docSize, effProp, getEl, listColors, ownProp, toHex, tryParse } from '../lib/svg';
+import { docSize, effProp, getEl, idOf, listColors, ownProp, toHex, tryParse } from '../lib/svg';
+import type { BoolOp } from '../lib/area';
 import { IconBtn, NumField, Section, Segmented, TextField, Toggle } from './ui';
 
 export function useDoc() {
@@ -225,15 +226,7 @@ export function PathTab() {
         <button className="btn" onClick={() => A.roundSelectedCorners()}><CornerIcon /> Abrunden</button>
       </div>
 
-      <div className="card">
-        <div className="sub">Kombinieren</div>
-        <div className="bool-row">
-          {BOOL_OPS.map(([op, label, title]) => (
-            <button key={op} className="btn" title={title} disabled={els.length < 2} onClick={() => A.booleanSelection(op)}><BoolIcon op={op} /> {label}</button>
-          ))}
-        </div>
-        <div className="hint">{els.length < 2 ? 'Mindestens zwei Elemente auswählen.' : 'Das unterste Element bestimmt Farbe und Position.'}</div>
-      </div>
+      <BoolCard els={els} />
 
       <div className="card plain">
         <div className="sub">Umwandeln</div>
@@ -249,9 +242,50 @@ export function PathTab() {
   );
 }
 
+/** Boolean operations with an explicit base: the element that is cut and whose color the result keeps */
+function BoolCard({ els }: { els: Element[] }) {
+  const boolBase = useStore((s) => s.boolBase);
+  const set = useStore((s) => s.set);
+  // operands bottom → top, as they are stacked
+  const ops_ = els.filter((e) => !els.some((o) => o !== e && o.contains(e)))
+    .sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+  const ids = ops_.map(idOf);
+  const sel = useStore((s) => s.selection);
+  const first = ids.includes(sel[0]) ? sel[0] : ids[0];
+  const base = boolBase && ids.includes(boolBase) ? boolBase : first;
+  const name = (e: Element, i: number) => `${e.getAttribute('id') || TAG_NAMES[e.localName] || e.localName} · Ebene ${i + 1}`
+    + `${i === 0 ? ' (unterste)' : i === ops_.length - 1 ? ' (oberste)' : ''}${ids[i] === first ? ' – zuerst ausgewählt' : ''}`;
+  const hover = (op: BoolOp | null) => set({ boolHover: op });
+  useEffect(() => () => set({ boolHover: null }), [set]);
+  return (
+    <div className="card">
+      <div className="sub">Kombinieren</div>
+      {ops_.length >= 2 && (
+        <label className="row gap bool-base" title="Aus diesem Element wird ausgeschnitten; das Ergebnis übernimmt seine Farbe und Ebene. Standard: das zuerst ausgewählte Element">
+          <span className="lbl">Basis</span>
+          <select className="select" value={base} onChange={(e) => set({ boolBase: e.target.value })}>
+            {ops_.map((e, i) => <option key={ids[i]} value={ids[i]}>{name(e, i)}</option>)}
+          </select>
+        </label>
+      )}
+      <div className="bool-row">
+        {BOOL_OPS.map(([op, label, title]) => (
+          <button key={op} className="btn" title={title} disabled={els.length < 2} onClick={() => A.booleanSelection(op)}
+            onMouseEnter={() => hover(op)} onMouseLeave={() => hover(null)} onFocus={() => hover(op)} onBlur={() => hover(null)}>
+            <BoolIcon op={op} /> {label}
+          </button>
+        ))}
+      </div>
+      <div className="hint">{els.length < 2
+        ? 'Mindestens zwei Elemente auswählen.'
+        : 'Basis ist das zuerst angeklickte Element (bei Rahmen-Auswahl das unterste). Ausschneiden entfernt alle anderen aus der Basis; das Ergebnis übernimmt ihre Farbe und Ebene. Für eine Vorschau mit der Maus über eine Aktion fahren.'}</div>
+    </div>
+  );
+}
+
 export const BOOL_OPS = [
   ['union', 'Verbinden', 'Verbinden (Vereinigung, OR)'],
-  ['subtract', 'Ausschneiden', 'Ausschneiden: obere Elemente vom untersten abziehen'],
+  ['subtract', 'Ausschneiden', 'Ausschneiden: alle anderen Elemente aus der Basis entfernen (Basis: zuerst ausgewähltes Element)'],
   ['intersect', 'Schnittmenge', 'Schnittmenge (AND)'],
   ['exclude', 'Ausschluss', 'Überlappung ausschließen (XOR)'],
 ] as const;
