@@ -250,6 +250,30 @@ export function reorder(doc: Document, ids: string[], dir: Arrange): string[] {
   return track(els)();
 }
 
+/** Where a layer is dropped, in panel terms: above/below a row (in front of / behind it) or into a group */
+export type DropPos = 'above' | 'below' | 'inside';
+
+/** Move elements next to or into a target; elements that change parent keep their position on the canvas */
+export function moveEls(doc: Document, ids: string[], targetId: string, pos: DropPos, ctx: Ctx): string[] {
+  const target = getEl(doc, targetId);
+  if (!target) return ids;
+  const els = topmost(elsOf(doc, ids)).filter((e) => e !== target && !e.contains(target));
+  if (!els.length) return ids;
+  const before = new Map(els.map((e) => [e, parentMatrix(e)]));
+  if (pos === 'inside') els.forEach((e) => target.appendChild(e));
+  else if (pos === 'above') [...els].reverse().forEach((e) => target.after(e));
+  else els.forEach((e) => target.before(e));
+  const moved = els.map((e) => {
+    const P0 = before.get(e)!, P1 = parentMatrix(e);
+    if (P0.every((v, i) => Math.abs(v - P1[i]) < 1e-9)) return e;
+    const parent = e.parentNode!, next = e.nextSibling;
+    applyLocal(e, mulAll(inv(P1), P0, localMatrix(e)), ctx, P0);
+    // applyLocal may replace the element with a clone
+    return (next ? next.previousSibling : parent.lastChild) as Element;
+  });
+  return track(moved)();
+}
+
 export function convertToPath(doc: Document, ids: string[], prec: number): string[] {
   const out: Element[] = [];
   for (const el of topmost(elsOf(doc, ids))) {

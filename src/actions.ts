@@ -1,7 +1,7 @@
 import { currentBoards, useStore } from './store';
 import { inv as invMat, mulAll, rotateAt, scaleAt, translate, unionBoxes, type Box, type Mat, type Pt } from './lib/matrix';
 import * as ops from './lib/ops';
-import { cleanSvgString, getEl, isSelectable, kids, parseSvg, serialize, idOf, docSize, prettyPrint, SHAPES, SVGNS } from './lib/svg';
+import { parentId as parentIdOf, cleanSvgString, getEl, isSelectable, kids, parseSvg, serialize, idOf, docSize, prettyPrint, SHAPES, SVGNS } from './lib/svg';
 import { minify } from './lib/minify';
 import type { BoolOp } from './lib/area';
 import { docName, isBlank } from './lib/recent';
@@ -264,6 +264,13 @@ export function recolor(from: string, to: string) {
 }
 export function setDocAttrs(attrs: Record<string, string | null>) {
   edit('Dokument', (doc) => { ops.setDocAttrs(doc, attrs); });
+}
+
+/** Reorder layers by drag and drop */
+export function moveLayers(ids: string[], target: string, pos: ops.DropPos) {
+  edit('Ebenen verschieben', (doc) => ops.moveEls(doc, ids, target, pos, ctx()));
+  const s = st();
+  if (s.selection.length) s.set({ scope: parentIdOf(s.selection[0]) });
 }
 
 /** Scale the document and everything in it to a new size */
