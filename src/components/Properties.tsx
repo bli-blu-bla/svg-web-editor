@@ -4,7 +4,7 @@ import {
   AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, FlipHorizontal2, FlipVertical2, RotateCcw, RotateCw,
   Lock, Unlock, Maximize2, Copy, Trash2, Group, Ungroup, BringToFront, SendToBack, ArrowUp, ArrowDown, Ban, Plus, X, Scissors, ArrowLeftRight,
 } from 'lucide-react';
-import { useStore } from '../store';
+import { nodeBaseOf, selectedNodes, useStore } from '../store';
 import { SHAPE_LABELS } from '../lib/shapes';
 import { toNodes, type NodeKind } from '../lib/nodes';
 import { ShapeIcon, SHAPE_ORDER } from './ShapePicker';
@@ -479,6 +479,8 @@ export function NodeTab() {
   const id = useStore((s) => s.nodeEdit);
   const nodeSel = useStore((s) => s.nodeSel);
   const smoothNodes = useStore((s) => s.smoothNodes);
+  const nodeCount = useStore((s) => selectedNodes(s).length);
+  const base = useStore((s) => nodeBaseOf(s));
   const el = doc && id ? getEl(doc, id) : null;
   const subs = useMemo(() => toNodes(el?.getAttribute('d') ?? ''), [el]);
   if (!el) return <div className="panel-empty">Kein Pfad in Bearbeitung.</div>;
@@ -520,6 +522,31 @@ export function NodeTab() {
           </>
         ) : <div className="hint">Einen Knoten auf der Fläche anklicken.</div>}
       </div>
+
+      {nodeCount > 1 && (
+        <div className="card">
+          <div className="row">
+            <span className="sub grow">Ausrichten · {nodeCount} Knoten</span>
+          </div>
+          <div className="align-grid">
+            <IconBtn title="Links (gleiche X)" icon={<AlignStartVertical size={15} />} onClick={() => A.alignNodes('left')} />
+            <IconBtn title="Senkrecht: horizontal zentriert (gleiche X)" icon={<AlignCenterVertical size={15} />} onClick={() => A.alignNodes('hcenter')} />
+            <IconBtn title="Rechts (gleiche X)" icon={<AlignEndVertical size={15} />} onClick={() => A.alignNodes('right')} />
+            <IconBtn title="Oben (gleiche Y)" icon={<AlignStartHorizontal size={15} />} onClick={() => A.alignNodes('top')} />
+            <IconBtn title="Waagrecht: vertikal zentriert (gleiche Y)" icon={<AlignCenterHorizontal size={15} />} onClick={() => A.alignNodes('vcenter')} />
+            <IconBtn title="Unten (gleiche Y)" icon={<AlignEndHorizontal size={15} />} onClick={() => A.alignNodes('bottom')} />
+          </div>
+          {nodeCount > 2 && (
+            <div className="grid2">
+              <button className="btn" onClick={() => A.distributeNodes('h')}><AlignHorizontalDistributeCenter size={15} /> Horizontal</button>
+              <button className="btn" onClick={() => A.distributeNodes('v')}><AlignVerticalDistributeCenter size={15} /> Vertikal</button>
+            </div>
+          )}
+          <div className="hint">{base
+            ? `Basis: Knoten ${subs.slice(0, base.s).reduce((n, sp) => n + sp.nodes.length, 0) + base.j + 1} (zuerst angeklickt, hervorgehoben) – die anderen werden an ihm ausgerichtet. Klick auf einen anderen ausgewählten Knoten macht ihn zur Basis.`
+            : 'Keine Basis (Rahmen-Auswahl): Ausrichtung an der Auswahl. Klick auf einen ausgewählten Knoten macht ihn zur Basis.'}</div>
+        </div>
+      )}
 
       <div className="card dashed">
         <div className="sub">{nodeSel && subs.length > 1 ? `Teilpfad ${nodeSel.s + 1} von ${subs.length}` : `Ganzer Pfad · ${total} Knoten`}</div>

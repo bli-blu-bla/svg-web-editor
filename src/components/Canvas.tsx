@@ -1,6 +1,6 @@
 import { createElement, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
-import { selectedNodes, useStore } from '../store';
+import { nodeBaseOf, selectedNodes, useStore } from '../store';
 import {
   apply, boxCorners, inv, matrixToString, mulAll, rotateAt, scaleAt, transformBox, translate, unionBoxes,
   type Box, type Mat, type Pt,
@@ -24,7 +24,7 @@ type Drag =
   | { kind: 'node-marquee'; start: Pt; base: NodeRef[]; hadNodes: boolean }
   | { kind: 'draw'; start: Pt; cx: number; cy: number; moved: boolean }
   | { kind: 'pen'; cx: number; cy: number; moved: boolean }
-  | { kind: 'node'; el: SVGPathElement; orig: SubPath[]; subs: SubPath[]; ref: NodeRef; refs: NodeRef[]; part: 'a' | 'in' | 'out'; start: Pt; inv: Mat; moved: boolean; kind0: NodeKind };
+  | { kind: 'node'; el: SVGPathElement; orig: SubPath[]; subs: SubPath[]; ref: NodeRef; refs: NodeRef[]; part: 'a' | 'in' | 'out'; start: Pt; inv: Mat; moved: boolean; kind0: NodeKind; makeBase?: boolean };
 
 type TDrag = Extract<Drag, { items: Item[] }>;
 /** A point on an outline: element, segment after node j of subpath s at parameter t, root position, element→root matrix */
@@ -89,7 +89,9 @@ export function Canvas() {
   const [ghost, setGhost] = useState<Pt | null>(null);
   const selNode = useStore((s) => s.nodeSel);
   const nodeMulti = useStore((s) => s.nodeMulti);
+  const nodeBase = useStore((s) => s.nodeBase);
   const selNodes = selectedNodes({ nodeSel: selNode, nodeMulti });
+  const baseNode = selNodes.length > 1 ? nodeBaseOf({ nodeSel: selNode, nodeMulti, nodeBase }) : null;
   const boolHover = useStore((s) => s.boolHover);
   const boolBase = useStore((s) => s.boolBase);
   const boolPv = useMemo(() => {
@@ -97,7 +99,7 @@ export function Canvas() {
     const { doc } = tryParse(svg);
     try { return doc ? boolPreview(doc, selection, boolHover, boolBase) : null; } catch { return null; }
   }, [boolHover, boolBase, selection, svg]);
-  const setSelNode = (r: NodeRef | null) => set({ nodeSel: r, nodeMulti: r ? [r] : [] });
+  const setSelNode = (r: NodeRef | null) => set({ nodeSel: r, nodeMulti: r ? [r] : [], nodeBase: r });
   const sameRef = (a: NodeRef, b: NodeRef) => a.s === b.s && a.j === b.j;
 
   const markup = useMemo(() => renderMarkup(svg), [svg]);
@@ -365,24 +367,30 @@ export function Canvas() {
       const m = el && elToRoot(el);
       if (el && m && nodeSubs) {
         let refs = [ref];
+        let makeBase = false;
         if (part === 'a') {
           // Shift toggles the node; clicking a selected node keeps the selection so all of them can be dragged
           const cur = selectedNodes(s);
           const inSel = cur.some((r) => sameRef(r, ref));
           if (e.shiftKey) {
+            // the first node clicked stays the base; removing the base leaves none
             const next = inSel ? cur.filter((r) => !sameRef(r, ref)) : [...cur, ref];
-            set({ nodeSel: next.length ? (inSel ? next[next.length - 1] : ref) : null, nodeMulti: next });
+            const b = s.nodeBase;
+            const nodeBase = inSel ? (b && sameRef(b, ref) ? null : b) : cur.length ? b : ref;
+            set({ nodeSel: next.length ? (inSel ? next[next.length - 1] : ref) : null, nodeMulti: next, nodeBase });
             if (inSel) return;
             refs = next;
           } else if (inSel) {
+            // clicking (not dragging) a selected node makes it the base
             set({ nodeSel: ref });
             refs = cur;
+            makeBase = cur.length > 1;
           } else setSelNode(ref);
         }
         const iv = inv(m);
         const node = nodeSubs[ref.s]?.nodes[ref.j];
         drag.current = {
-          kind: 'node', el, orig: nodeSubs, subs: nodeSubs, ref, refs, part: part as 'a' | 'in' | 'out',
+          kind: 'node', el, orig: nodeSubs, subs: nodeSubs, ref, refs, makeBase, part: part as 'a' | 'in' | 'out',
           start: apply(iv, p.x, p.y), inv: iv, moved: false, kind0: node ? A.effNodeKind(node, ref) : 'corner',
         };
       }
@@ -396,7 +404,7 @@ export function Canvas() {
     // node editing: empty space (or the path itself with the node tool) starts a marquee over the nodes
     if (s.nodeEdit && (id === null || (id === s.nodeEdit && tool === 'node'))) {
       const cur = selectedNodes(s);
-      if (!e.shiftKey) set({ nodeSel: null, nodeMulti: [] });
+      if (!e.shiftKey) set({ nodeSel: null, nodeMulti: [], nodeBase: null });
       drag.current = { kind: 'node-marquee', start: p, base: e.shiftKey ? cur : [], hadNodes: cur.length > 0 || id !== null };
       return;
     }
@@ -601,6 +609,7 @@ export function Canvas() {
       return;
     }
     if (d.kind === 'node') {
+      if (!d.moved && d.makeBase) set({ nodeBase: d.ref });
       if (d.moved) {
         const before = s.svg;
         A.setAttr(s.nodeEdit!, 'd', fromNodes(d.subs, s.settings.precision));
@@ -719,7 +728,7 @@ export function Canvas() {
         handles.push(<circle key={`h${key}${hk}`} data-handle={`node:${key}:${hk === 'hin' ? 'in' : 'out'}`} className="ov-ctrl" cx={b.x} cy={b.y} r={3.5} />);
       });
       const kind = nodeKind(n);
-      const cls = 'ov-anchor' + (isSel ? ' on' : '');
+      const cls = 'ov-anchor' + (isSel ? ' on' : '') + (baseNode && baseNode.s === si && baseNode.j === j ? ' base' : '');
       anchors.push(kind === 'corner'
         ? <rect key={`a${key}`} data-handle={`node:${key}:a`} className={cls} x={a.x - 4} y={a.y - 4} width={8} height={8} />
         : <circle key={`a${key}`} data-handle={`node:${key}:a`} className={cls + ' smooth'} cx={a.x} cy={a.y} r={4.5} />);

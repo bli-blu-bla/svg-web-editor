@@ -60,6 +60,8 @@ interface State {
   nodeSel: NodeRef | null;
   /** all selected nodes when several are (marquee, Shift-click); only valid while it contains nodeSel – see selectedNodes() */
   nodeMulti: NodeRef[];
+  /** node the others align to: the first one clicked (null after a marquee) – see nodeBaseOf() */
+  nodeBase: NodeRef | null;
   /** nodes explicitly set to smooth ("pathId|s:j") – geometry alone reads equal-length handles as symmetric */
   smoothNodes: string[];
   hoverId: string | null;
@@ -160,6 +162,12 @@ export function selectedNodes(s: Pick<State, 'nodeSel' | 'nodeMulti'>): NodeRef[
   return s.nodeMulti.some((r) => r.s === p.s && r.j === p.j) ? s.nodeMulti : [p];
 }
 
+/** The base node for aligning, if it is still among the selected nodes */
+export function nodeBaseOf(s: Pick<State, 'nodeSel' | 'nodeMulti' | 'nodeBase'>): NodeRef | null {
+  const b = s.nodeBase;
+  return b && selectedNodes(s).some((r) => r.s === b.s && r.j === b.j) ? b : null;
+}
+
 /** All artboards with the active one's live state written back */
 export function currentBoards(s: Pick<State, 'boards' | 'docId' | 'docName' | 'svg' | 'history' | 'index' | 'selection' | 'scope'>): Board[] {
   return s.boards.map((b) => (b.id === s.docId
@@ -213,6 +221,7 @@ export const useStore = create<State>((set, get) => ({
   nodeEdit: null,
   nodeSel: null,
   nodeMulti: [],
+  nodeBase: null,
   smoothNodes: [],
   hoverId: null,
   tool: 'select',

@@ -564,3 +564,4 @@ kbd { font: 11px 'JetBrains Mono', monospace; color: #c4c4cc; background: var(--
 .ov-marquee.enclose { fill: rgba(139,124,246,.12); stroke: var(--accent); stroke-dasharray: none; }
 .ov-marquee.touch { fill: rgba(126,224,161,.10); stroke: var(--good); stroke-dasharray: 5 3; }
 .ov-tag.touch rect { fill: #3f9e68; }
+.ov-anchor.base { fill: #fff; stroke: var(--accent); stroke-width: 3; }

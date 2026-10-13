@@ -1,4 +1,4 @@
-import { currentBoards, selectedNodes, useStore } from './store';
+import { currentBoards, nodeBaseOf, selectedNodes, useStore } from './store';
 import { inv as invMat, mulAll, rotateAt, scaleAt, translate, unionBoxes, type Box, type Mat, type Pt } from './lib/matrix';
 import * as ops from './lib/ops';
 import { parentId as parentIdOf, cleanSvgString, getEl, isSelectable, kids, parseSvg, serialize, idOf, docSize, prettyPrint, SHAPES, SVGNS } from './lib/svg';
@@ -146,6 +146,7 @@ export function flip(axis: 'h' | 'v') {
 export type AlignMode = 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom';
 export function align(mode: AlignMode, toDocument: boolean) {
   const s = st();
+  if (s.nodeEdit) return alignNodes(mode);
   const ids = s.selection;
   const boxes = ids.map((id) => ({ id, b: rootBBox(id) })).filter((x): x is { id: string; b: Box } => !!x.b);
   if (!boxes.length) return;
@@ -168,7 +169,69 @@ export function align(mode: AlignMode, toDocument: boolean) {
   edit('Ausrichten', (doc) => { ops.transformEach(doc, items, ctx()); });
 }
 
+/** Root-space positions of the selected nodes, and a function turning a root-space delta into path coordinates */
+function nodeFrame(subs: SubPath[], refs: NodeRef[]) {
+  const s = st();
+  const el = s.nodeEdit ? liveEl(s.nodeEdit) : null;
+  const m: Mat = (el && elToRoot(el)) || [1, 0, 0, 1, 0, 0];
+  const iv = invMat(m);
+  const pts = refs.flatMap((r) => {
+    const n = subs[r.s]?.nodes[r.j];
+    if (!n) return [];
+    const p = { x: m[0] * n.x + m[2] * n.y + m[4], y: m[1] * n.x + m[3] * n.y + m[5] };
+    return [{ r, p }];
+  });
+  const local = (dx: number, dy: number) => [iv[0] * dx + iv[2] * dy, iv[1] * dx + iv[3] * dy] as const;
+  return { pts, local };
+}
+
+/**
+ * Align the selected nodes. With a base node (the first one clicked) the others move onto its X or Y,
+ * otherwise they align to their bounding box. Two nodes aligned this way make a line horizontal / vertical.
+ */
+export function alignNodes(mode: AlignMode) {
+  const s = st();
+  const refs = selectedNodes(s), base = nodeBaseOf(s);
+  if (refs.length < 2) return s.notify('Mindestens 2 Knoten auswählen (Rahmen ziehen oder ⇧-Klick)');
+  const horiz = mode === 'left' || mode === 'hcenter' || mode === 'right';
+  editNodes('Knoten ausrichten', (subs) => {
+    const { pts, local } = nodeFrame(subs, refs);
+    const vals = pts.map(({ p }) => (horiz ? p.x : p.y));
+    const lo = Math.min(...vals), hi = Math.max(...vals);
+    const b = base && pts.find(({ r }) => r.s === base.s && r.j === base.j);
+    const target = b ? (horiz ? b.p.x : b.p.y)
+      : mode === 'left' || mode === 'top' ? lo : mode === 'right' || mode === 'bottom' ? hi : (lo + hi) / 2;
+    for (const { r, p } of pts) {
+      const d = target - (horiz ? p.x : p.y);
+      if (Math.abs(d) < 1e-12) continue;
+      const [lx, ly] = horiz ? local(d, 0) : local(0, d);
+      moveNodes(subs, [r], lx, ly);
+    }
+    return s.nodeSel;
+  }, undefined, true);
+}
+
+/** Space the selected nodes evenly between the outermost ones */
+export function distributeNodes(axis: 'h' | 'v') {
+  const s = st();
+  const refs = selectedNodes(s);
+  if (refs.length < 3) return s.notify('Mindestens 3 Knoten zum Verteilen auswählen');
+  editNodes('Knoten verteilen', (subs) => {
+    const { pts, local } = nodeFrame(subs, refs);
+    const v = (p: Pt) => (axis === 'h' ? p.x : p.y);
+    pts.sort((a, b) => v(a.p) - v(b.p));
+    const first = v(pts[0].p), step = (v(pts[pts.length - 1].p) - first) / (pts.length - 1);
+    pts.forEach(({ r, p }, i) => {
+      const d = first + i * step - v(p);
+      const [lx, ly] = axis === 'h' ? local(d, 0) : local(0, d);
+      moveNodes(subs, [r], lx, ly);
+    });
+    return s.nodeSel;
+  }, undefined, true);
+}
+
 export function distribute(axis: 'h' | 'v') {
+  if (st().nodeEdit) return distributeNodes(axis);
   const ids = st().selection;
   const boxes = ids.map((id) => ({ id, b: rootBBox(id) })).filter((x): x is { id: string; b: Box } => !!x.b);
   if (boxes.length < 3) return st().notify('Mindestens 3 Elemente zum Verteilen auswählen');
@@ -472,7 +535,7 @@ export function editNodes(label: string, fn: (subs: SubPath[]) => NodeRef | null
     el.setAttribute('d', fromNodes(subs, s.settings.precision));
   }, { key });
   if (empty) st().set({ nodeEdit: null, nodeSel: null, nodeMulti: [] });
-  else if (sel !== undefined) st().set({ nodeSel: sel, ...(keepMulti ? {} : { nodeMulti: [] }) });
+  else if (sel !== undefined) st().set({ nodeSel: sel, ...(keepMulti ? {} : { nodeMulti: [], nodeBase: null }) });
 }
 
 /** Move nodes (with their handles) by a delta in path coordinates */

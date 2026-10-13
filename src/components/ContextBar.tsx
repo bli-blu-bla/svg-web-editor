@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { AlignCenterHorizontal, AlignCenterVertical, Copy, Plus, Scissors, Spline, Trash2 } from 'lucide-react';
-import { useStore } from '../store';
+import { nodeBaseOf, selectedNodes, useStore } from '../store';
 import * as A from '../actions';
 import { getEl, parseSvg, SHAPES } from '../lib/svg';
 import type { PNode } from '../lib/nodes';
@@ -70,9 +70,19 @@ export function ContextBar({ x, y, count }: { x: number; y: number; count: numbe
 export function NodeBar({ x, y, node }: { x: number; y: number; node: PNode }) {
   const nodeSel = useStore((s) => s.nodeSel);
   const smoothNodes = useStore((s) => s.smoothNodes);
+  const count = useStore((s) => selectedNodes(s).length);
+  const hasBase = useStore((s) => !!nodeBaseOf(s));
   const kind = nodeSel ? A.effNodeKind(node, nodeSel, smoothNodes) : null;
+  const to = hasBase ? ' am Basis-Knoten' : '';
   return (
     <Bar x={x} y={y} label="Aktionen für den Knoten">
+      {count > 1 && (
+        <>
+          <Btn title={`Senkrecht ausrichten – gleiche X-Position${to}`} onClick={() => A.alignNodes('hcenter')}><AlignCenterVertical size={17} /></Btn>
+          <Btn title={`Waagrecht ausrichten – gleiche Y-Position${to}`} onClick={() => A.alignNodes('vcenter')}><AlignCenterHorizontal size={17} /></Btn>
+          <Sep />
+        </>
+      )}
       {(['corner', 'smooth', 'symmetric'] as const).map((k) => (
         <Btn key={k} text on={kind === k} title={`Knotentyp: ${A.NODE_LABELS[k]}`} onClick={() => A.setSelectedNodeKind(k)}>
           <NodeKindIcon kind={k} /> {A.NODE_LABELS[k]}
