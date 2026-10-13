@@ -1,10 +1,11 @@
-import { useStore } from './store';
+import { currentBoards, useStore } from './store';
 import { inv as invMat, mulAll, rotateAt, scaleAt, translate, unionBoxes, type Box, type Mat, type Pt } from './lib/matrix';
 import * as ops from './lib/ops';
 import { cleanSvgString, getEl, isSelectable, kids, parseSvg, serialize, idOf, docSize, prettyPrint, SHAPES, SVGNS } from './lib/svg';
 import { minify } from './lib/minify';
 import type { BoolOp } from './lib/area';
-import { docName } from './lib/recent';
+import { docName, isBlank } from './lib/recent';
+import { layoutBoards } from './lib/boards';
 import { newSnapshotId } from './lib/snapshots';
 import { deleteNode, fromNodes, nodeKind, reverseSub, setNodeKind, splitAt, toNodes, type NodeKind, type NodeRef, type PNode, type SubPath } from './lib/nodes';
 import { shapeSpec, SHAPE_LABELS, type ShapeKind } from './lib/shapes';
@@ -29,11 +30,14 @@ export function edit(label: string, fn: (doc: Document) => string[] | void, opts
   }
 }
 
-/** Open an SVG as a new document (own entry in the recent list, fresh undo history) */
-export function loadSvg(text: string, label = 'Importiert', name?: string) {
+/**
+ * Open an SVG as a new document (own entry in the recent list, fresh undo history).
+ * With `beside` it becomes a new artboard next to the active one – unless that one is still empty.
+ */
+export function loadSvg(text: string, label = 'Importiert', name?: string, beside = false) {
   try {
     const clean = cleanSvgString(text);
-    st().openDoc(clean, docName(clean, name), undefined, label);
+    st().openDoc(clean, docName(clean, name), undefined, label, beside && !isBlank(st().svg));
   } catch (e) {
     st().notify('Ungültiges SVG: ' + (e as Error).message);
   }
@@ -44,7 +48,27 @@ export function newDocument() {
   if (!v) return;
   const [w, h] = v.split(/[x×, ]+/).map(Number);
   if (!(w > 0 && h > 0)) return st().notify('Ungültige Größe');
-  loadSvg(`<svg xmlns="${SVGNS}" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"></svg>`, 'Neues Dokument', `Neu ${w}×${h}`);
+  loadSvg(`<svg xmlns="${SVGNS}" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"></svg>`, 'Neues Dokument', `Neu ${w}×${h}`, true);
+}
+
+/** Open SVG files as artboards next to the active one */
+export async function openFiles(files: File[]) {
+  for (const f of files.filter((f) => f.type === 'image/svg+xml' || /\.svg$/i.test(f.name))) {
+    loadSvg(await f.text(), `Datei ${f.name}`, f.name, true);
+  }
+}
+
+// ---------- artboards ----------
+/** Activate the artboard to the right (1) or left (-1) */
+export function cycleBoard(dir: 1 | -1) {
+  const s = st();
+  if (s.boards.length < 2) return;
+  const i = s.boards.findIndex((b) => b.id === s.docId);
+  s.activateBoard(s.boards[(i + dir + s.boards.length) % s.boards.length].id);
+}
+export function closeBoard() {
+  if (st().boards.length < 2) return st().notify('Die letzte Zeichenfläche bleibt offen');
+  st().closeBoard(st().docId);
 }
 
 // ---------- selection ----------
@@ -242,6 +266,7 @@ export function setDocAttrs(attrs: Record<string, string | null>) {
   edit('Dokument', (doc) => { ops.setDocAttrs(doc, attrs); });
 }
 
+
 // ---------- clipboard ----------
 function selectionFragments(): string[] {
   const s = st();
@@ -273,11 +298,11 @@ export function pasteText(text: string | null) {
 // ---------- export ----------
 export const fileName = (suffix = '') => (st().docName.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'image') + suffix + '.svg';
 
-export function openRecent(id: string) {
+export function openRecent(id: string, beside = false) {
   const d = st().recent.find((r) => r.id === id);
   if (!d) return;
   if (id === st().docId) return st().set({ fitReq: st().fitReq + 1 });
-  st().openDoc(d.svg, d.name, d.id, `Geöffnet: ${d.name}`);
+  st().openDoc(d.svg, d.name, d.id, `Geöffnet: ${d.name}`, beside);
 }
 
 export function download(name = fileName(), content = st().svg) {
@@ -352,6 +377,14 @@ export function zoomBy(f: number, cx?: number, cy?: number) {
   s.set({ zoom: z, pan: { x: px - (px - s.pan.x) * k, y: py - (py - s.pan.y) * k } });
 }
 export const fitView = () => st().set({ fitReq: st().fitReq + 1 });
+/** Fit all artboards into the view */
+export function fitAll() {
+  const vp = document.querySelector('.viewport')?.getBoundingClientRect();
+  if (!vp) return;
+  const { w, h } = layoutBoards(currentBoards(st()));
+  const z = Math.max(0.02, Math.min((vp.width - 120) / w, (vp.height - 160) / h, 64));
+  st().set({ zoom: z, pan: { x: (vp.width - w * z) / 2, y: (vp.height - h * z) / 2 + 10 } });
+}
 export function zoomTo(z: number) { zoomBy(z / st().zoom); }
 
 // ---------- shapes & corners ----------

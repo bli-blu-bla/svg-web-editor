@@ -34,7 +34,7 @@ const SHAPE_KEYS: Partial<Record<ShapeKind, string>> = { rect: 'R', circle: 'O',
 export function commands(): Command[] {
   const list: Command[] = [
     // Datei
-    { id: 'new', group: 'Datei', label: 'Neues Dokument', run: A.newDocument },
+    { id: 'new', group: 'Datei', label: 'Neue Zeichenfläche', terms: 'neues dokument artboard', run: A.newDocument },
     { id: 'open', group: 'Datei', label: 'SVG öffnen …', keys: '⌘O', terms: 'datei laden import', run: () => document.getElementById('file-input')?.click() },
     { id: 'download', group: 'Datei', label: 'SVG herunterladen', keys: '⌘S', terms: 'speichern export', run: () => A.download() },
     { id: 'snapshot', group: 'Datei', label: 'Snapshot speichern', keys: '⇧⌘S', terms: 'zwischenspeichern stand sichern version', run: A.takeSnapshot },
@@ -110,6 +110,10 @@ export function commands(): Command[] {
 
     // Ansicht
     { id: 'fit', group: 'Ansicht', label: 'Einpassen', keys: '⌘0', run: A.fitView },
+    { id: 'fit-all', group: 'Ansicht', label: 'Alle Zeichenflächen einpassen', keys: '⇧⌘0', terms: 'artboards übersicht', run: A.fitAll },
+    { id: 'board-next', group: 'Ansicht', label: 'Nächste Zeichenfläche', terms: 'artboard dokument wechseln rechts', run: () => A.cycleBoard(1) },
+    { id: 'board-prev', group: 'Ansicht', label: 'Vorherige Zeichenfläche', terms: 'artboard dokument wechseln links', run: () => A.cycleBoard(-1) },
+    { id: 'board-close', group: 'Datei', label: 'Zeichenfläche schließen', terms: 'artboard dokument entfernen', run: A.closeBoard },
     { id: 'zoom-100', group: 'Ansicht', label: 'Zoom 100 %', keys: '⌘1', run: () => A.zoomTo(1) },
     { id: 'zoom-in', group: 'Ansicht', label: 'Hineinzoomen', keys: '⌘+', run: () => A.zoomBy(1.25) },
     { id: 'zoom-out', group: 'Ansicht', label: 'Herauszoomen', keys: '⌘−', run: () => A.zoomBy(0.8) },
@@ -128,6 +132,7 @@ export function commands(): Command[] {
   for (const d of recent) {
     if (d.id === docId) continue;
     list.push({ id: 'recent-' + d.id, group: 'Zuletzt bearbeitet', label: `Öffnen: ${d.name}`, terms: 'datei icon', run: () => A.openRecent(d.id) });
+    list.push({ id: 'recent-beside-' + d.id, group: 'Zuletzt bearbeitet', label: `Daneben öffnen: ${d.name}`, terms: 'zeichenfläche artboard', run: () => A.openRecent(d.id, true) });
   }
   return list;
 }

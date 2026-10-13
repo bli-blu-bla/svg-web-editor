@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, History, X } from 'lucide-react';
+import { ChevronDown, History, Plus, X } from 'lucide-react';
 import { useStore } from '../store';
 import * as A from '../actions';
 import { thumbSrc } from '../lib/recent';
@@ -17,6 +17,7 @@ const ago = (t: number) => {
 export function RecentMenu() {
   const recent = useStore((s) => s.recent);
   const docId = useStore((s) => s.docId);
+  const boards = useStore((s) => s.boards);
   const name = useStore((s) => s.docName);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -65,7 +66,11 @@ export function RecentMenu() {
                 onClick={() => { A.openRecent(d.id); setOpen(false); }}>
                 <div className="recent-thumb"><img src={thumbSrc(d.svg)} alt="" draggable={false} /></div>
                 <div className="recent-label">{d.name}</div>
-                <div className="recent-time">{d.id === docId ? 'geöffnet' : ago(d.updated)}</div>
+                <div className="recent-time">{d.id === docId ? 'geöffnet' : boards.some((b) => b.id === d.id) ? 'auf der Fläche' : ago(d.updated)}</div>
+                {!boards.some((b) => b.id === d.id) && (
+                  <button className="recent-del recent-add" title="Als weitere Zeichenfläche daneben öffnen"
+                    onClick={(e) => { e.stopPropagation(); A.openRecent(d.id, true); setOpen(false); }}><Plus size={12} /></button>
+                )}
                 <button className="recent-del" title="Aus der Liste entfernen"
                   onClick={(e) => { e.stopPropagation(); useStore.getState().removeRecent(d.id); }}><X size={12} /></button>
               </div>

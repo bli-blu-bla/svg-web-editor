@@ -35,6 +35,7 @@ function useShortcuts() {
       else if (mod && e.code === 'BracketLeft') { stop(); A.arrange(e.shiftKey ? 'back' : 'backward'); }
       else if (mod && k === 's') { stop(); if (e.shiftKey) A.takeSnapshot(); else A.download(); }
       else if (mod && k === 'o') { stop(); (document.getElementById('file-input') as HTMLInputElement)?.click(); }
+      else if (mod && e.shiftKey && e.code === 'Digit0') { stop(); A.fitAll(); }
       else if (mod && (k === '=' || k === '+')) { stop(); A.zoomBy(1.25); }
       else if (mod && k === '-') { stop(); A.zoomBy(0.8); }
       else if (mod && k === '0') { stop(); A.fitView(); }
@@ -102,6 +103,7 @@ function ZoomMenu() {
           {item('Hineinzoomen', '⌘+', () => A.zoomBy(1.25))}
           {item('Herauszoomen', '⌘−', () => A.zoomBy(0.8))}
           {item('Einpassen', '⌘0', A.fitView)}
+          {item('Alle Zeichenflächen einpassen', '⇧⌘0', A.fitAll)}
           <div className="menu-sep" />
           {[0.5, 1, 2, 4, 8].map((z) => <div key={z}>{item(`${z * 100} %`, z === 1 ? '⌘1' : '', () => A.zoomTo(z))}</div>)}
         </div>
@@ -152,10 +154,10 @@ function TopBar() {
     <header className="topbar">
       <img className="logo" src={`${import.meta.env.BASE_URL}logo.svg`} width={26} height={26} alt="SVG Editor" title="SVG Editor" />
       <div className="tgroup">
-        <IconBtn title="Neues Dokument" icon={<FilePlus2 size={17} />} onClick={A.newDocument} />
-        <IconBtn title="SVG öffnen (⌘O) – oder Datei auf die Fläche ziehen" icon={<FolderOpen size={17} />} onClick={() => fileRef.current?.click()} />
-        <input id="file-input" ref={fileRef} type="file" accept=".svg,image/svg+xml" hidden
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) f.text().then((t) => A.loadSvg(t, `Datei ${f.name}`, f.name)); e.target.value = ''; }} />
+        <IconBtn title="Neue Zeichenfläche" icon={<FilePlus2 size={17} />} onClick={A.newDocument} />
+        <IconBtn title="SVG öffnen (⌘O) – oder Dateien auf die Fläche ziehen; jede wird eine eigene Zeichenfläche" icon={<FolderOpen size={17} />} onClick={() => fileRef.current?.click()} />
+        <input id="file-input" ref={fileRef} type="file" accept=".svg,image/svg+xml" multiple hidden
+          onChange={(e) => { A.openFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
       </div>
       <RecentMenu />
       <ModeChip />
@@ -178,7 +180,7 @@ const KEYS: [string, string][] = [
   ['⌘D', 'Duplizieren'], ['⌫', 'Löschen'], ['⌘G / ⇧⌘G', 'Gruppieren / aufheben'], ['⌘] / ⌘[', 'Nach vorne / hinten (⇧ = ganz)'],
   ['Pfeiltasten', 'Verschieben 1 (⇧ 10, ⌥ 0.1)'], ['⇧ beim Ziehen', 'Achse sperren / proportional / 15°-Schritte'], ['⌥ beim Skalieren', 'Von der Mitte aus'],
   ['⌘ + Klick', 'Tiefes Auswählen (in Gruppen)'], ['Doppelklick / Enter', 'Gruppe betreten / Knoten bearbeiten'], ['Esc', 'Auswahl aufheben / Modus verlassen'],
-  ['⌘K', 'Befehlspalette: jeden Befehl suchen'], ['V / A / P / H', 'Auswahl / Knoten / Zeichenstift / Hand'], ['P: Klick / Ziehen', 'Eckpunkt / Kurvenpunkt setzen; Enter beendet, Klick auf Start schließt'], ['R / O / L / S', 'Rechteck / Kreis / Linie / Stern zeichnen'], ['Leertaste', 'Ansicht verschieben'], ['⌘ + Scroll', 'Zoomen'], ['⌘0 / ⌘1', 'Einpassen / 100 %'], ['⌘S / ⌘O', 'Speichern / Öffnen'],
+  ['⌘K', 'Befehlspalette: jeden Befehl suchen'], ['V / A / P / H', 'Auswahl / Knoten / Zeichenstift / Hand'], ['P: Klick / Ziehen', 'Eckpunkt / Kurvenpunkt setzen; Enter beendet, Klick auf Start schließt'], ['R / O / L / S', 'Rechteck / Kreis / Linie / Stern zeichnen'], ['Leertaste', 'Ansicht verschieben'], ['⌘ + Scroll', 'Zoomen'], ['⌘0 / ⇧⌘0 / ⌘1', 'Einpassen / alle Zeichenflächen / 100 %'], ['Klick auf Zeichenfläche', 'Andere Zeichenfläche bearbeiten'], ['⌘S / ⌘O', 'Speichern / Öffnen'],
 ];
 function Shortcuts() {
   const open = useStore((s) => s.helpOpen);

@@ -1,4 +1,5 @@
-import { createElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createElement, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { X } from 'lucide-react';
 import { useStore } from '../store';
 import {
   apply, boxCorners, inv, matrixToString, mulAll, rotateAt, scaleAt, transformBox, translate, unionBoxes,
@@ -11,6 +12,7 @@ import { cloneSubs, fromNodes, insertNode, nearestOnPath, nodeKind, toNodes, typ
 import * as A from '../actions';
 import { shapeSpec, SQUARE_SHAPES } from '../lib/shapes';
 import { ContextBar, NodeBar } from './ContextBar';
+import { layoutBoards } from '../lib/boards';
 
 type Item = { id: string; el: SVGGraphicsElement; orig: string | null; P: Mat; L: Mat };
 type Drag =
@@ -30,6 +32,15 @@ function gridStep(zoom: number) {
   return 1000;
 }
 
+/** An artboard that is not being edited: a static image, clicking it activates it */
+const BoardPreview = memo(function BoardPreview({ id, src, style, grid }: { id: string; src: string; style: React.CSSProperties; grid: boolean }) {
+  return (
+    <div className={`stage board ${grid ? 'grid' : ''}`} data-board={id} style={style} title="Klicken zum Bearbeiten">
+      <img src={src} alt="" draggable={false} />
+    </div>
+  );
+});
+
 export function Canvas() {
   const svg = useStore((s) => s.svg);
   const zoom = useStore((s) => s.zoom);
@@ -42,6 +53,9 @@ export function Canvas() {
   const fitReq = useStore((s) => s.fitReq);
   const settings = useStore((s) => s.settings);
   const set = useStore((s) => s.set);
+  const boards = useStore((s) => s.boards);
+  const docId = useStore((s) => s.docId);
+  const docName = useStore((s) => s.docName);
 
   const vpRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<HTMLDivElement>(null);
@@ -66,13 +80,16 @@ export function Canvas() {
 
   const markup = useMemo(() => renderMarkup(svg), [svg]);
   const size = markup.size;
-  const V: Mat = useMemo(() => [zoom, 0, 0, zoom, pan.x - size.x * zoom, pan.y - size.y * zoom], [zoom, pan, size]);
+  // all artboards share one coordinate space; `pan` is where its origin sits in the viewport
+  const layout = useMemo(() => layoutBoards(boards.map((b) => (b.id === docId ? { id: b.id, name: docName, svg } : b))), [boards, docId, docName, svg]);
+  const ax = layout.rects.find((r) => r.id === docId)?.x ?? 0;
+  const V: Mat = useMemo(() => [zoom, 0, 0, zoom, pan.x + (ax - size.x) * zoom, pan.y - size.y * zoom], [zoom, pan, size, ax]);
   const Vi = useMemo(() => inv(V), [V]);
 
   // ---- geometry from live DOM ----
   useLayoutEffect(() => {
     setLiveRoot((docRef.current?.querySelector('svg') as SVGSVGElement) || null);
-  }, [markup.html]);
+  }, [markup.html, docId]);
 
   useLayoutEffect(() => {
     const b: Record<string, Box> = {};
@@ -86,11 +103,11 @@ export function Canvas() {
         setNodeSubs(toNodes(el.getAttribute('d')));
       } else set({ nodeEdit: null });
     } else { setNodeSubs(null); if (useStore.getState().nodeSel) set({ nodeSel: null }); A.resetSmoothNodes(); }
-  }, [markup.html, selection, nodeEdit, set]);
+  }, [markup.html, docId, selection, nodeEdit, set]);
 
   useLayoutEffect(() => {
     setHoverBox(hoverId !== null && !selection.includes(hoverId) ? rootBBox(hoverId) : null);
-  }, [hoverId, markup.html, selection]);
+  }, [hoverId, markup.html, docId, selection]);
 
   // ---- fit view ----
   useLayoutEffect(() => {
@@ -98,7 +115,7 @@ export function Canvas() {
     if (!vp) return;
     const r = vp.getBoundingClientRect();
     const z = Math.max(0.02, Math.min((r.width - 120) / size.w, (r.height - 120) / size.h, 64));
-    set({ zoom: z, pan: { x: (r.width - size.w * z) / 2, y: (r.height - size.h * z) / 2 } });
+    set({ zoom: z, pan: { x: (r.width - size.w * z) / 2 - ax * z, y: (r.height - size.h * z) / 2 } });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitReq]);
 
@@ -246,6 +263,12 @@ export function Canvas() {
     const target = e.target as Element;
     if (e.button === 1 || tool === 'pan' || space.current) {
       drag.current = { kind: 'pan', sx: e.clientX, sy: e.clientY, pan0: s.pan };
+      return;
+    }
+    const board = target.closest('[data-board]')?.getAttribute('data-board');
+    if (board) {
+      finishPen(false);
+      s.activateBoard(board);
       return;
     }
     const p = toRoot(e);
@@ -646,11 +669,12 @@ export function Canvas() {
 
   const step = gridStep(zoom);
   const gs = step * zoom;
-  const stageStyle: React.CSSProperties = {
-    left: pan.x, top: pan.y, width: size.w * zoom, height: size.h * zoom,
+  const boardStyle = (x: number, sz: { x: number; y: number; w: number; h: number }): React.CSSProperties => ({
+    left: pan.x + x * zoom, top: pan.y, width: sz.w * zoom, height: sz.h * zoom,
     backgroundSize: settings.grid ? `${gs}px ${gs}px, ${gs}px ${gs}px` : undefined,
-    backgroundPosition: settings.grid ? `${(-size.x % step) * zoom}px ${(-size.y % step) * zoom}px` : undefined,
-  };
+    backgroundPosition: settings.grid ? `${(-sz.x % step) * zoom}px ${(-sz.y % step) * zoom}px` : undefined,
+  });
+  const multi = layout.rects.length > 1;
 
   return (
     <div
@@ -664,13 +688,25 @@ export function Canvas() {
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();
-        const f = e.dataTransfer.files[0];
-        if (f) f.text().then((t) => A.loadSvg(t, `Datei ${f.name}`, f.name));
+        A.openFiles(Array.from(e.dataTransfer.files));
       }}
     >
-      <div className={`stage ${settings.grid ? 'grid' : ''}`} style={stageStyle}>
-        <div className="doc" ref={docRef} dangerouslySetInnerHTML={{ __html: markup.html }} />
-      </div>
+      {layout.rects.map((r) => (r.id === docId
+        ? (
+          <div key={r.id} className={`stage ${multi ? 'active' : ''} ${settings.grid ? 'grid' : ''}`} style={boardStyle(ax, size)}>
+            <div className="doc" ref={docRef} dangerouslySetInnerHTML={{ __html: markup.html }} />
+          </div>
+        )
+        : <BoardPreview key={r.id} id={r.id} src={r.src} grid={settings.grid} style={boardStyle(r.x, r.size)} />))}
+      {multi && layout.rects.map((r) => (
+        <div key={r.id} className={`board-label ${r.id === docId ? 'on' : ''}`}
+          style={{ left: pan.x + r.x * zoom, top: pan.y - 26, maxWidth: Math.max(48, r.size.w * zoom) }}
+          onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
+          onClick={() => { finishPen(false); useStore.getState().activateBoard(r.id); }}>
+          <span>{r.name}</span>
+          <button title="Zeichenfläche schließen" onClick={(e) => { e.stopPropagation(); useStore.getState().closeBoard(r.id); }}><X size={12} /></button>
+        </div>
+      ))}
       <svg className="overlay">{overlay}</svg>
       {markup.error && <div className="canvas-error">SVG-Fehler: {markup.error}</div>}
       {settings.contextBar && !dragM && !marquee && !draw && tool !== 'shape' && tool !== 'pan' && tool !== 'pen' && (() => {

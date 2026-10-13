@@ -45,6 +45,9 @@ export interface Settings {
 
 export interface Geo { union: Box | null; boxes: Record<string, Box> }
 
+/** An open document on the canvas; the active one's live state is kept in the top-level fields */
+export interface Board { id: string; name: string; svg: string; history: Entry[]; index: number; selection: string[]; scope: string }
+
 interface State {
   history: Entry[];
   index: number;
@@ -76,6 +79,8 @@ interface State {
   recent: RecentDoc[];
   /** saved states of the open document, newest first */
   snapshots: Snapshot[];
+  /** documents side by side on the canvas, left to right (the entry of the active one is synced on switch) */
+  boards: Board[];
 
   commit: (svg: string, label: string, opts?: { selection?: string[]; key?: string }) => void;
   undo: () => void;
@@ -85,8 +90,11 @@ interface State {
   set: (p: Partial<State>) => void;
   setSettings: (p: Partial<Settings>) => void;
   notify: (msg: string) => void;
-  /** Replace the document and start a fresh undo history */
-  openDoc: (svg: string, name: string, id?: string, label?: string) => void;
+  /** Replace the active document (or add it as a new artboard beside it) with a fresh undo history */
+  openDoc: (svg: string, name: string, id?: string, label?: string, beside?: boolean) => void;
+  /** Make another artboard the one being edited */
+  activateBoard: (id: string) => void;
+  closeBoard: (id: string) => void;
   renameRecent: (id: string, name: string) => void;
   removeRecent: (id: string) => void;
   /** Replace the open document's snapshots; returns false when they could not be stored */
@@ -96,6 +104,7 @@ interface State {
 const LS_DOC = 'svg-editor-doc';
 const LS_SET = 'svg-editor-settings';
 const LS_CUR = 'svg-editor-doc-id';
+const LS_BOARDS = 'svg-editor-boards';
 
 const load = <T,>(k: string, def: T): T => {
   try { const v = localStorage.getItem(k); return v ? { ...def, ...JSON.parse(v) } : def; } catch { return def; }
@@ -118,6 +127,32 @@ const initialId = (() => { try { return localStorage.getItem(LS_CUR) || newDocId
 const initialName = initialRecent.find((d) => d.id === initialId)?.name ?? (initial === SAMPLE ? 'Beispiel' : docName(initial));
 const MAX = 300;
 
+const freshBoard = (id: string, name: string, svg: string, label = 'Geöffnet'): Board => ({
+  id, name, svg, history: [{ svg, label, time: Date.now() }], index: 0, selection: [], scope: '',
+});
+const initialBoards = ((): Board[] => {
+  let saved: Board[] = [];
+  try {
+    const v = JSON.parse(localStorage.getItem(LS_BOARDS) || '[]');
+    if (Array.isArray(v)) {
+      saved = v.filter((b) => b && typeof b.id === 'string' && typeof b.name === 'string' && typeof b.svg === 'string' && tryParse(b.svg).doc)
+        .map((b) => freshBoard(b.id, b.name, b.svg));
+    }
+  } catch { /* ignore */ }
+  const cur = freshBoard(initialId, initialName, initial);
+  const i = saved.findIndex((b) => b.id === initialId);
+  if (i < 0) return [...saved, cur];
+  saved[i] = cur;
+  return saved;
+})();
+
+/** All artboards with the active one's live state written back */
+export function currentBoards(s: Pick<State, 'boards' | 'docId' | 'docName' | 'svg' | 'history' | 'index' | 'selection' | 'scope'>): Board[] {
+  return s.boards.map((b) => (b.id === s.docId
+    ? { ...b, name: s.docName, svg: s.svg, history: s.history, index: s.index, selection: s.selection, scope: s.scope }
+    : b));
+}
+
 function validSelection(svg: string, sel: string[]): string[] {
   const { doc } = tryParse(svg);
   if (!doc) return [];
@@ -137,14 +172,21 @@ export function flushSave() {
   if (!pending) return;
   pending = false;
   const s = useStore.getState();
-  try {
-    localStorage.setItem(LS_DOC, s.svg);
-    localStorage.setItem(LS_CUR, s.docId);
-  } catch { /* ignore */ }
+  saveBoards();
   const recent = upsertRecent(s.recent, s.docId, s.docName, s.svg);
   if (recent !== s.recent) useStore.setState({ recent: saveRecent(recent) });
 }
 window.addEventListener('beforeunload', flushSave);
+
+/** Write the open artboards and which one is active */
+function saveBoards() {
+  const s = useStore.getState();
+  try {
+    localStorage.setItem(LS_DOC, s.svg);
+    localStorage.setItem(LS_CUR, s.docId);
+    localStorage.setItem(LS_BOARDS, JSON.stringify(currentBoards(s).map(({ id, name, svg }) => ({ id, name, svg }))));
+  } catch { /* ignore */ }
+}
 
 let toastTimer: number | undefined;
 
@@ -174,6 +216,7 @@ export const useStore = create<State>((set, get) => ({
   docName: initialName,
   recent: initialRecent,
   snapshots: loadSnapshots(initialId),
+  boards: initialBoards,
 
   commit: (svg, label, opts = {}) => {
     const s = get();
@@ -218,27 +261,59 @@ export const useStore = create<State>((set, get) => ({
     set({ toast: msg });
     toastTimer = window.setTimeout(() => set({ toast: null }), 2600);
   },
-  openDoc: (svg, name, id = newDocId(), label = 'Geöffnet') => {
+  openDoc: (svg, name, id = newDocId(), label = 'Geöffnet', beside = false) => {
+    if (get().boards.some((b) => b.id === id)) { get().activateBoard(id); set({ fitReq: get().fitReq + 1 }); return; }
     flushSave();
+    const s = get();
+    const board = freshBoard(id, name, svg, label);
+    const boards = currentBoards(s);
+    const i = boards.findIndex((b) => b.id === s.docId);
+    if (beside) boards.splice(i + 1, 0, board); else boards[i] = board;
     set({
-      svg, docId: id, docName: name, snapshots: loadSnapshots(id), history: [{ svg, label, time: Date.now() }], index: 0,
-      selection: [], scope: '', nodeEdit: null, nodeSel: null, smoothNodes: [], fitReq: get().fitReq + 1,
+      boards, svg, docId: id, docName: name, snapshots: loadSnapshots(id), history: board.history, index: 0,
+      selection: [], scope: '', nodeEdit: null, nodeSel: null, smoothNodes: [], hoverId: null, fitReq: s.fitReq + 1,
     });
     persist();
     flushSave();
   },
+  activateBoard: (id) => {
+    if (id === get().docId) return;
+    flushSave();
+    const boards = currentBoards(get());
+    const b = boards.find((x) => x.id === id);
+    if (!b) return;
+    set({
+      boards, svg: b.svg, docId: b.id, docName: b.name, snapshots: loadSnapshots(b.id), history: b.history, index: b.index,
+      selection: validSelection(b.svg, b.selection), scope: b.scope, nodeEdit: null, nodeSel: null, smoothNodes: [], hoverId: null,
+    });
+    saveBoards();
+  },
+  closeBoard: (id) => {
+    const s = get();
+    const i = s.boards.findIndex((b) => b.id === id);
+    if (i < 0 || s.boards.length < 2) return;
+    if (id === s.docId) get().activateBoard((s.boards[i + 1] ?? s.boards[i - 1]).id);
+    set({ boards: get().boards.filter((b) => b.id !== id) });
+    saveBoards();
+  },
   renameRecent: (id, name) => {
     const s = get();
-    set({ recent: saveRecent(s.recent.map((d) => (d.id === id ? { ...d, name } : d))), ...(id === s.docId ? { docName: name } : {}) });
+    set({
+      recent: saveRecent(s.recent.map((d) => (d.id === id ? { ...d, name } : d))),
+      boards: s.boards.map((b) => (b.id === id ? { ...b, name } : b)),
+      ...(id === s.docId ? { docName: name } : {}),
+    });
+    saveBoards();
   },
   removeRecent: (id) => {
     const s = get();
     set({ recent: saveRecent(s.recent.filter((d) => d.id !== id)) });
-    if (id === s.docId) {
-      // the open document lives on as a new entry on its next change, and keeps its snapshots
+    if (s.boards.some((b) => b.id === id)) {
+      // an open document lives on as a new entry on its next change, and keeps its snapshots
       const docId = newDocId();
       moveSnapshots(id, docId);
-      set({ docId });
+      set({ boards: s.boards.map((b) => (b.id === id ? { ...b, id: docId } : b)), ...(id === s.docId ? { docId } : {}) });
+      saveBoards();
     } else {
       try { saveSnapshots(id, []); } catch { /* ignore */ }
     }
