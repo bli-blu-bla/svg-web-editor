@@ -1,4 +1,4 @@
-import { currentBoards, useStore } from './store';
+import { currentBoards, selectedNodes, useStore } from './store';
 import { inv as invMat, mulAll, rotateAt, scaleAt, translate, unionBoxes, type Box, type Mat, type Pt } from './lib/matrix';
 import * as ops from './lib/ops';
 import { parentId as parentIdOf, cleanSvgString, getEl, isSelectable, kids, parseSvg, serialize, idOf, docSize, prettyPrint, SHAPES, SVGNS } from './lib/svg';
@@ -453,8 +453,11 @@ export function roundSelectedCorners(radius = st().settings.cornerRadius) {
 }
 
 // ---------- path nodes ----------
-/** Run fn on the node model of the path being edited and write it back */
-export function editNodes(label: string, fn: (subs: SubPath[]) => NodeRef | null | undefined, key?: string) {
+/**
+ * Run fn on the node model of the path being edited and write it back.
+ * keepMulti: the node indices stay the same, so a multi-selection survives.
+ */
+export function editNodes(label: string, fn: (subs: SubPath[]) => NodeRef | null | undefined, key?: string, keepMulti = false) {
   const s = st();
   const id = s.nodeEdit;
   if (!id) return;
@@ -468,8 +471,19 @@ export function editNodes(label: string, fn: (subs: SubPath[]) => NodeRef | null
     if (!subs.length) { el.remove(); empty = true; return []; }
     el.setAttribute('d', fromNodes(subs, s.settings.precision));
   }, { key });
-  if (empty) st().set({ nodeEdit: null, nodeSel: null });
-  else if (sel !== undefined) st().set({ nodeSel: sel });
+  if (empty) st().set({ nodeEdit: null, nodeSel: null, nodeMulti: [] });
+  else if (sel !== undefined) st().set({ nodeSel: sel, ...(keepMulti ? {} : { nodeMulti: [] }) });
+}
+
+/** Move nodes (with their handles) by a delta in path coordinates */
+export function moveNodes(subs: SubPath[], refs: NodeRef[], dx: number, dy: number) {
+  for (const r of refs) {
+    const n = subs[r.s]?.nodes[r.j];
+    if (!n) continue;
+    n.x += dx; n.y += dy;
+    if (n.hin) { n.hin.x += dx; n.hin.y += dy; }
+    if (n.hout) { n.hout.x += dx; n.hout.y += dy; }
+  }
 }
 
 export const NODE_LABELS: Record<NodeKind, string> = { corner: 'Ecke', smooth: 'Glatt', symmetric: 'Symmetrisch' };
@@ -491,10 +505,11 @@ function markSmooth(refs: NodeRef[], on: boolean) {
 /** Node indices shift after inserting or deleting – drop the smooth flags */
 export const resetSmoothNodes = () => { if (st().smoothNodes.length) st().set({ smoothNodes: [] }); };
 
-export function setSelectedNodeKind(kind: NodeKind, ref = st().nodeSel) {
+export function setSelectedNodeKind(kind: NodeKind) {
+  const ref = st().nodeSel, refs = selectedNodes(st());
   if (!ref) return st().notify('Zuerst einen Knoten anklicken');
-  editNodes(`Knoten: ${NODE_LABELS[kind]}`, (subs) => { setNodeKind(subs, ref, kind); return ref; });
-  markSmooth([ref], kind === 'smooth');
+  editNodes(`Knoten: ${NODE_LABELS[kind]}`, (subs) => { refs.forEach((r) => setNodeKind(subs, r, kind)); return ref; }, undefined, true);
+  markSmooth(refs, kind === 'smooth');
 }
 
 /** Double-click on a node: corner ↔ smooth */
@@ -510,29 +525,24 @@ export function toggleNodeKind(ref: NodeRef) {
 }
 
 export function deleteSelectedNode() {
-  const ref = st().nodeSel;
-  if (!ref) return;
-  editNodes('Knoten löschen', (subs) => { deleteNode(subs, ref); return null; });
+  const refs = selectedNodes(st());
+  if (!refs.length) return;
+  // back to front, so deleting one doesn't shift the indices of the others
+  const order = [...refs].sort((a, b) => b.s - a.s || b.j - a.j);
+  editNodes(refs.length > 1 ? `${refs.length} Knoten löschen` : 'Knoten löschen', (subs) => { order.forEach((r) => deleteNode(subs, r)); return null; });
   resetSmoothNodes();
 }
 
 /** Move the selected node by a root-space delta */
 export function nudgeNode(dx: number, dy: number) {
   const s = st();
-  const ref = s.nodeSel;
+  const ref = s.nodeSel, refs = selectedNodes(s);
   if (!ref || !s.nodeEdit) return;
   const el = liveEl(s.nodeEdit);
   const m = el && elToRoot(el);
   const iv = m ? invMat(m) : ([1, 0, 0, 1, 0, 0] as const);
   const lx = iv[0] * dx + iv[2] * dy, ly = iv[1] * dx + iv[3] * dy;
-  editNodes('Knoten verschieben', (subs) => {
-    const n = subs[ref.s]?.nodes[ref.j];
-    if (!n) return ref;
-    n.x += lx; n.y += ly;
-    if (n.hin) { n.hin.x += lx; n.hin.y += ly; }
-    if (n.hout) { n.hout.x += lx; n.hout.y += ly; }
-    return ref;
-  }, 'node-nudge');
+  editNodes('Knoten verschieben', (subs) => { moveNodes(subs, refs, lx, ly); return ref; }, 'node-nudge', true);
 }
 
 export function setAllNodesKind(kind: NodeKind) {

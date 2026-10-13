@@ -1,6 +1,6 @@
 import { createElement, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
-import { useStore } from '../store';
+import { selectedNodes, useStore } from '../store';
 import {
   apply, boxCorners, inv, matrixToString, mulAll, rotateAt, scaleAt, transformBox, translate, unionBoxes,
   type Box, type Mat, type Pt,
@@ -20,9 +20,11 @@ type Drag =
   | { kind: 'pan'; sx: number; sy: number; pan0: { x: number; y: number } }
   | { kind: 'move' | 'scale' | 'rotate'; start: Pt; box: Box; items: Item[]; handle?: string; moved: boolean; m: Mat }
   | { kind: 'marquee'; start: Pt; add: boolean; base: string[] }
+  /** marquee over the nodes of the path being edited; hadNodes: a plain click on empty space then leaves node editing */
+  | { kind: 'node-marquee'; start: Pt; base: NodeRef[]; hadNodes: boolean }
   | { kind: 'draw'; start: Pt; cx: number; cy: number; moved: boolean }
   | { kind: 'pen'; cx: number; cy: number; moved: boolean }
-  | { kind: 'node'; el: SVGPathElement; orig: SubPath[]; subs: SubPath[]; ref: NodeRef; part: 'a' | 'in' | 'out'; start: Pt; inv: Mat; moved: boolean; kind0: NodeKind };
+  | { kind: 'node'; el: SVGPathElement; orig: SubPath[]; subs: SubPath[]; ref: NodeRef; refs: NodeRef[]; part: 'a' | 'in' | 'out'; start: Pt; inv: Mat; moved: boolean; kind0: NodeKind };
 
 type TDrag = Extract<Drag, { items: Item[] }>;
 /** A point on an outline: element, segment after node j of subpath s at parameter t, root position, element→root matrix */
@@ -68,6 +70,8 @@ export function Canvas() {
   const [spaceDown, setSpaceDown] = useState(false);
   const [dragM, setDragM] = useState<Mat | null>(null);
   const [marquee, setMarquee] = useState<Box | null>(null);
+  /** marquee dragged downwards: elements must lie completely inside; upwards: touching is enough */
+  const [mqEnclose, setMqEnclose] = useState(true);
   const [boxes, setBoxes] = useState<Record<string, Box>>({});
   const [hoverBox, setHoverBox] = useState<Box | null>(null);
   const [nodeMat, setNodeMat] = useState<Mat | null>(null);
@@ -84,6 +88,8 @@ export function Canvas() {
   /** node editing: where a double-click would add a node */
   const [ghost, setGhost] = useState<Pt | null>(null);
   const selNode = useStore((s) => s.nodeSel);
+  const nodeMulti = useStore((s) => s.nodeMulti);
+  const selNodes = selectedNodes({ nodeSel: selNode, nodeMulti });
   const boolHover = useStore((s) => s.boolHover);
   const boolBase = useStore((s) => s.boolBase);
   const boolPv = useMemo(() => {
@@ -91,7 +97,8 @@ export function Canvas() {
     const { doc } = tryParse(svg);
     try { return doc ? boolPreview(doc, selection, boolHover, boolBase) : null; } catch { return null; }
   }, [boolHover, boolBase, selection, svg]);
-  const setSelNode = (r: NodeRef | null) => set({ nodeSel: r });
+  const setSelNode = (r: NodeRef | null) => set({ nodeSel: r, nodeMulti: r ? [r] : [] });
+  const sameRef = (a: NodeRef, b: NodeRef) => a.s === b.s && a.j === b.j;
 
   const markup = useMemo(() => renderMarkup(svg), [svg]);
   const size = markup.size;
@@ -357,11 +364,25 @@ export function Canvas() {
       const el = liveEl(s.nodeEdit) as SVGPathElement;
       const m = el && elToRoot(el);
       if (el && m && nodeSubs) {
-        if (part === 'a') setSelNode(ref);
+        let refs = [ref];
+        if (part === 'a') {
+          // Shift toggles the node; clicking a selected node keeps the selection so all of them can be dragged
+          const cur = selectedNodes(s);
+          const inSel = cur.some((r) => sameRef(r, ref));
+          if (e.shiftKey) {
+            const next = inSel ? cur.filter((r) => !sameRef(r, ref)) : [...cur, ref];
+            set({ nodeSel: next.length ? (inSel ? next[next.length - 1] : ref) : null, nodeMulti: next });
+            if (inSel) return;
+            refs = next;
+          } else if (inSel) {
+            set({ nodeSel: ref });
+            refs = cur;
+          } else setSelNode(ref);
+        }
         const iv = inv(m);
         const node = nodeSubs[ref.s]?.nodes[ref.j];
         drag.current = {
-          kind: 'node', el, orig: nodeSubs, subs: nodeSubs, ref, part: part as 'a' | 'in' | 'out',
+          kind: 'node', el, orig: nodeSubs, subs: nodeSubs, ref, refs, part: part as 'a' | 'in' | 'out',
           start: apply(iv, p.x, p.y), inv: iv, moved: false, kind0: node ? A.effNodeKind(node, ref) : 'corner',
         };
       }
@@ -372,6 +393,13 @@ export function Canvas() {
 
     const deep = e.metaKey || e.ctrlKey || tool === 'node';
     const id = pick(target, deep);
+    // node editing: empty space (or the path itself with the node tool) starts a marquee over the nodes
+    if (s.nodeEdit && (id === null || (id === s.nodeEdit && tool === 'node'))) {
+      const cur = selectedNodes(s);
+      if (!e.shiftKey) set({ nodeSel: null, nodeMulti: [] });
+      drag.current = { kind: 'node-marquee', start: p, base: e.shiftKey ? cur : [], hadNodes: cur.length > 0 || id !== null };
+      return;
+    }
     if (s.nodeEdit && id !== s.nodeEdit) set({ nodeEdit: null });
     if (id !== null) {
       if (tool === 'node') {
@@ -447,7 +475,8 @@ export function Canvas() {
       if (d.moved) setDraw(drawGeom(d.start, p, e));
       return;
     }
-    if (d.kind === 'marquee') {
+    if (d.kind === 'marquee' || d.kind === 'node-marquee') {
+      setMqEnclose(p.y >= d.start.y);
       setMarquee({ x: Math.min(d.start.x, p.x), y: Math.min(d.start.y, p.y), w: Math.abs(p.x - d.start.x), h: Math.abs(p.y - d.start.y) });
       return;
     }
@@ -460,11 +489,9 @@ export function Canvas() {
       const o = d.orig[d.ref.s]?.nodes[d.ref.j];
       if (!n || !o) return;
       if (d.part === 'a') {
-        // anchor drags its handles along
+        // anchors drag their handles along; all selected nodes move by the dragged node's (snapped) delta
         const tx = snap(o.x + dx) - o.x, ty = snap(o.y + dy) - o.y;
-        n.x += tx; n.y += ty;
-        if (n.hin) { n.hin.x += tx; n.hin.y += ty; }
-        if (n.hout) { n.hout.x += tx; n.hout.y += ty; }
+        A.moveNodes(subs, d.refs.some((r) => sameRef(r, d.ref)) ? d.refs : [d.ref], tx, ty);
       } else {
         const own = d.part === 'in' ? 'hin' : 'hout', other = d.part === 'in' ? 'hout' : 'hin';
         const h0 = o[own]!;
@@ -535,6 +562,24 @@ export function Canvas() {
       set({ tool: 'select' });
       return;
     }
+    if (d.kind === 'node-marquee') {
+      const m = marquee;
+      setMarquee(null);
+      if (!m || (m.w === 0 && m.h === 0)) {
+        // plain click on empty space with nothing selected → leave node editing
+        if (!d.hadNodes) { set({ nodeEdit: null }); s.select([]); }
+        return;
+      }
+      if (!nodeSubs || !nodeMat) return;
+      const hits: NodeRef[] = [];
+      nodeSubs.forEach((sp, si) => sp.nodes.forEach((n, j) => {
+        const q = apply(nodeMat, n.x, n.y);
+        if (q.x >= m.x && q.x <= m.x + m.w && q.y >= m.y && q.y <= m.y + m.h) hits.push({ s: si, j });
+      }));
+      const all = [...d.base, ...hits.filter((h) => !d.base.some((b) => sameRef(b, h)))];
+      set({ nodeSel: all.length ? all[all.length - 1] : null, nodeMulti: all });
+      return;
+    }
     if (d.kind === 'marquee') {
       const m = marquee;
       setMarquee(null);
@@ -546,7 +591,10 @@ export function Canvas() {
           .map((c) => c.getAttribute('data-eid')!)
           .filter((id) => {
             const b = rootBBox(id);
-            return b && b.x <= m.x + m.w && b.x + b.w >= m.x && b.y <= m.y + m.h && b.y + b.h >= m.y;
+            if (!b) return false;
+            return mqEnclose
+              ? b.x >= m.x && b.x + b.w <= m.x + m.w && b.y >= m.y && b.y + b.h <= m.y + m.h
+              : b.x <= m.x + m.w && b.x + b.w >= m.x && b.y <= m.y + m.h && b.y + b.h >= m.y;
           });
         s.select([...new Set([...d.base, ...ids])]);
       }
@@ -662,7 +710,7 @@ export function Canvas() {
     nodeSubs.forEach((sp, si) => sp.nodes.forEach((n, j) => {
       const a = tp(n);
       const key = `${si}:${j}`;
-      const isSel = selNode?.s === si && selNode.j === j;
+      const isSel = selNodes.some((r) => r.s === si && r.j === j);
       (['hin', 'hout'] as const).forEach((hk) => {
         const hp = n[hk];
         if (!hp) return;
@@ -768,7 +816,20 @@ export function Canvas() {
     const c = toVp(ghost);
     overlay.push(<circle key="ghost" className="ov-ghost" cx={c.x} cy={c.y} r={4} />);
   }
-  if (marquee) overlay.push(<polygon key="mq" className="ov-marquee" points={ptsStr(poly(marquee, null))} />);
+  if (marquee) {
+    const nodesMq = drag.current?.kind === 'node-marquee';
+    overlay.push(<polygon key="mq" className={`ov-marquee ${nodesMq ? '' : mqEnclose ? 'enclose' : 'touch'}`} points={ptsStr(poly(marquee, null))} />);
+    if (!nodesMq) {
+      const c = toVp({ x: marquee.x, y: marquee.y + marquee.h });
+      const label = mqEnclose ? 'Vollständig enthalten' : 'Berühren genügt';
+      overlay.push(
+        <g key="mq-label" className={`ov-tag ${mqEnclose ? 'base' : 'touch'}`}>
+          <rect x={c.x} y={c.y + 4} width={label.length * 6.6 + 12} height={18} rx={4} />
+          <text x={c.x + (label.length * 6.6 + 12) / 2} y={c.y + 17}>{label}</text>
+        </g>,
+      );
+    }
+  }
   if (scope) {
     const sb = rootBBox(scope);
     if (sb) overlay = [<polygon key="scope" className="ov-scope" points={ptsStr(poly(sb, null))} />, ...overlay];
@@ -853,6 +914,7 @@ export function Canvas() {
         <div className="key-hints">
           <span><kbd>Doppelklick</kbd> Ecke ↔ Glatt</span>
           <span><kbd>Doppelklick Kontur</kbd> Knoten einfügen</span>
+          <span><kbd>Rahmen ziehen</kbd> / <kbd>⇧ Klick</kbd> Mehrere Knoten</span>
           <span><kbd>⌥</kbd> Anfasser lösen</span>
           <span><kbd>⇧</kbd> Achse sperren</span>
           <span><kbd>⌫</kbd> Knoten löschen</span>

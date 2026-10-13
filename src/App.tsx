@@ -180,7 +180,7 @@ const KEYS: [string, string][] = [
   ['⌘Z / ⇧⌘Z', 'Rückgängig / Wiederholen'], ['⌘A', 'Alles auswählen'], ['⌘C / ⌘X / ⌘V', 'Kopieren / Ausschneiden / Einfügen (auch SVG-Code)'],
   ['⌘D', 'Duplizieren'], ['⌫', 'Löschen'], ['⌘G / ⇧⌘G', 'Gruppieren / aufheben'], ['⌘] / ⌘[', 'Nach vorne / hinten (⇧ = ganz)'],
   ['Pfeiltasten', 'Verschieben 1 (⇧ 10, ⌥ 0.1)'], ['⇧ beim Ziehen', 'Achse sperren / proportional / 15°-Schritte'], ['⌥ beim Skalieren', 'Von der Mitte aus'],
-  ['⌘ + Klick', 'Tiefes Auswählen (in Gruppen)'], ['Doppelklick / Enter', 'Gruppe betreten / Knoten bearbeiten'], ['Esc', 'Auswahl aufheben / Modus verlassen'],
+  ['Rahmen nach unten / oben', 'Nur vollständig enthaltene / alle berührten Elemente'], ['Knotenmodus: Rahmen / ⇧ Klick', 'Mehrere Knoten auswählen'], ['⌘ + Klick', 'Tiefes Auswählen (in Gruppen)'], ['Doppelklick / Enter', 'Gruppe betreten / Knoten bearbeiten'], ['Esc', 'Auswahl aufheben / Modus verlassen'],
   ['⌘K', 'Befehlspalette: jeden Befehl suchen'], ['V / A / P / C / H', 'Auswahl / Knoten / Zeichenstift / Schere / Hand'], ['C: Klick auf Kontur', 'Pfad an dieser Stelle schneiden'], ['P: Klick / Ziehen', 'Eckpunkt / Kurvenpunkt setzen; Enter beendet, Klick auf Start schließt'], ['R / O / L / S', 'Rechteck / Kreis / Linie / Stern zeichnen'], ['Leertaste', 'Ansicht verschieben'], ['⌘ + Scroll', 'Zoomen'], ['⌘0 / ⇧⌘0 / ⌘1', 'Einpassen / alle Zeichenflächen / 100 %'], ['Klick auf Zeichenfläche', 'Andere Zeichenfläche bearbeiten'], ['⌘S / ⌘O', 'Speichern / Öffnen'],
 ];
 function Shortcuts() {

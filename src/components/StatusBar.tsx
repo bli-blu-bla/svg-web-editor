@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useStore } from '../store';
+import { selectedNodes, useStore } from '../store';
 import * as A from '../actions';
 import { byteSize, fmtBytes, minify } from '../lib/minify';
 import { tryParse, getEl } from '../lib/svg';
@@ -15,6 +15,7 @@ export function StatusBar() {
   const union = useStore((s) => s.geo.union);
   const nodeEdit = useStore((s) => s.nodeEdit);
   const nodeSel = useStore((s) => s.nodeSel);
+  const nodeMulti = useStore((s) => s.nodeMulti);
   const smoothNodes = useStore((s) => s.smoothNodes);
   const settings = useStore((s) => s.settings);
   const setSettings = useStore((s) => s.setSettings);
@@ -35,7 +36,8 @@ export function StatusBar() {
     const subs = doc ? toNodes(getEl(doc, nodeEdit)?.getAttribute('d') ?? '') : [];
     const node = nodeSel ? subs[nodeSel.s]?.nodes[nodeSel.j] : null;
     const total = subs.reduce((a, sp) => a + sp.nodes.length, 0);
-    sel = node ? `Knoten ${nodeSel!.j + 1} · ${A.NODE_LABELS[A.effNodeKind(node, nodeSel!, smoothNodes)]} · X ${n(node.x)} Y ${n(node.y)}` : `Knotenmodus · ${total} Knoten`;
+    const count = selectedNodes({ nodeSel, nodeMulti }).length;
+    sel = count > 1 ? `${count} Knoten ausgewählt` : node ? `Knoten ${nodeSel!.j + 1} · ${A.NODE_LABELS[A.effNodeKind(node, nodeSel!, smoothNodes)]} · X ${n(node.x)} Y ${n(node.y)}` : `Knotenmodus · ${total} Knoten`;
   } else if (count) {
     sel = `${count === 1 ? '1 Element' : `${count} Elemente`}${union ? ` · ${n(union.w)} × ${n(union.h)}` : ''}`;
   }

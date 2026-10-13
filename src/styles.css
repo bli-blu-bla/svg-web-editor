@@ -559,3 +559,8 @@ kbd { font: 11px 'JetBrains Mono', monospace; color: #c4c4cc; background: var(--
 .ov-tag.cut rect { fill: var(--danger); }
 .ov-tag.op rect { fill: var(--faint); }
 .bool-base .select { flex: 1; min-width: 0; }
+
+/* ---------- marquee direction ---------- */
+.ov-marquee.enclose { fill: rgba(139,124,246,.12); stroke: var(--accent); stroke-dasharray: none; }
+.ov-marquee.touch { fill: rgba(126,224,161,.10); stroke: var(--good); stroke-dasharray: 5 3; }
+.ov-tag.touch rect { fill: #3f9e68; }

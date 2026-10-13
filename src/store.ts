@@ -58,6 +58,8 @@ interface State {
   nodeEdit: string | null;
   /** selected node while editing a path */
   nodeSel: NodeRef | null;
+  /** all selected nodes when several are (marquee, Shift-click); only valid while it contains nodeSel – see selectedNodes() */
+  nodeMulti: NodeRef[];
   /** nodes explicitly set to smooth ("pathId|s:j") – geometry alone reads equal-length handles as symmetric */
   smoothNodes: string[];
   hoverId: string | null;
@@ -151,6 +153,13 @@ const initialBoards = ((): Board[] => {
   return saved;
 })();
 
+/** Selected nodes of the path being edited: the multi-selection if it belongs to the primary node, else just that */
+export function selectedNodes(s: Pick<State, 'nodeSel' | 'nodeMulti'>): NodeRef[] {
+  const p = s.nodeSel;
+  if (!p) return [];
+  return s.nodeMulti.some((r) => r.s === p.s && r.j === p.j) ? s.nodeMulti : [p];
+}
+
 /** All artboards with the active one's live state written back */
 export function currentBoards(s: Pick<State, 'boards' | 'docId' | 'docName' | 'svg' | 'history' | 'index' | 'selection' | 'scope'>): Board[] {
   return s.boards.map((b) => (b.id === s.docId
@@ -203,6 +212,7 @@ export const useStore = create<State>((set, get) => ({
   scope: '',
   nodeEdit: null,
   nodeSel: null,
+  nodeMulti: [],
   smoothNodes: [],
   hoverId: null,
   tool: 'select',
