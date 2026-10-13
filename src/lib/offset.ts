@@ -119,9 +119,13 @@ export function curveOffset(d: string, distance: number, join: JoinKind = 'miter
     if (Math.abs(a) > maxA) { maxA = Math.abs(a); sign = a >= 0 ? 1 : -1; }
   }
   const dd = distance * sign;
-  const out: Seg[] = [];
+  return serializePath(subs.flatMap((sp) => offsetSub(sp, dd, join, miterLimit)), prec);
+}
 
-  for (const sp of subs) {
+/** Offset one subpath by dd along its normal (no orientation handling) */
+function offsetSub(sp: Sub, dd: number, join: JoinKind, miterLimit: number): Seg[] {
+  const out: Seg[] = [];
+  {
     const orig: OSeg[] = [];
     for (const s of sp.segs) {
       if (s.type === 'L') orig.push(s);
@@ -186,8 +190,75 @@ export function curveOffset(d: string, distance: number, join: JoinKind = 'miter
     });
     if (sp.closed) out.push({ c: 'Z', v: [] });
   }
-  return serializePath(out, prec);
+  return out;
 }
+
+/** Reverse the drawing direction of one subpath made of M/L/C/A(/Z) segments */
+function reverseSub(segs: Seg[]): Seg[] {
+  const closed = segs[segs.length - 1]?.c === 'Z';
+  const body = closed ? segs.slice(0, -1) : segs;
+  // start point of every drawing segment
+  const starts: P2[] = [];
+  let cur: P2 = [body[0].v[0], body[0].v[1]];
+  for (const s of body.slice(1)) { starts.push(cur); cur = [s.v[s.v.length - 2], s.v[s.v.length - 1]]; }
+  const out: Seg[] = [{ c: 'M', v: [...cur] }];
+  for (let i = body.length - 1; i >= 1; i--) {
+    const s = body[i], st = starts[i - 1];
+    if (s.c === 'L') out.push({ c: 'L', v: [...st] });
+    else if (s.c === 'C') out.push({ c: 'C', v: [s.v[2], s.v[3], s.v[0], s.v[1], ...st] });
+    else if (s.c === 'A') out.push({ c: 'A', v: [s.v[0], s.v[1], s.v[2], s.v[3], s.v[4] ? 0 : 1, ...st] });
+  }
+  if (closed) out.push({ c: 'Z', v: [] });
+  return out;
+}
+
+const endPt = (segs: Seg[]): P2 => { const v = segs[segs.length - 1].v; return [v[v.length - 2], v[v.length - 1]]; };
+
+/** Cap from a (one side) to b (other side) around the path end e with outward tangent t */
+function cap(kind: CapKind, a: P2, b: P2, t: P2, h: number): Seg[] {
+  const tn = mulS(t, h / (len(t) || 1));
+  // sweep 1 turns towards positive angles (clockwise on screen): from a, around the end, towards t
+  if (kind === 'round') return [{ c: 'A', v: [h, h, 0, 0, cross(sub(a, b), tn) > 0 ? 1 : 0, b[0], b[1]] }];
+  if (kind === 'square') { const a2 = add(a, tn), b2 = add(b, tn); return [{ c: 'L', v: [...a2] }, { c: 'L', v: [...b2] }, { c: 'L', v: [...b] }]; }
+  return [{ c: 'L', v: [...b] }];
+}
+
+/** Signed area of a path (flattened), to orient outline contours */
+const segsArea = (segs: Seg[]) => flatten(toCurves(segs), 0.1).reduce((a, p) => a + polyArea(p.pts), 0);
+
+/**
+ * Stroke outline that keeps curves: both sides are curve offsets, joined by real caps (arcs for round caps).
+ * Contours are oriented so that nonzero filling gives the stroke area.
+ */
+function curveStrokeOutline(d: string, width: number, capKind: CapKind, join: JoinKind, miterLimit: number): Seg[] {
+  const h = width / 2;
+  const out: Seg[] = [];
+  const oriented = (segs: Seg[], positive: boolean) => ((segsArea(segs) >= 0) === positive ? segs : reverseSub(segs));
+  for (const sp of buildSubs(toCurves(parsePath(d)))) {
+    const left = offsetSub(sp, h, join, miterLimit), right = offsetSub(sp, -h, join, miterLimit);
+    if (left.length < 2 || right.length < 2) throw new Error('degenerate');
+    if (sp.closed) {
+      // ring: the larger contour outside, the smaller one as a hole
+      const [outer, inner] = Math.abs(segsArea(left)) >= Math.abs(segsArea(right)) ? [left, right] : [right, left];
+      out.push(...oriented(outer, true), ...oriented(inner, false));
+      continue;
+    }
+    const first = sp.segs[0], last = sp.segs[sp.segs.length - 1];
+    const back = reverseSub(right);
+    const ring: Seg[] = [
+      ...left,
+      ...cap(capKind, endPt(left), [back[0].v[0], back[0].v[1]], endTan(last), h),
+      ...back.slice(1),
+      ...cap(capKind, endPt(back), [left[0].v[0], left[0].v[1]], mulS(startTan(first), -1), h),
+      { c: 'Z', v: [] },
+    ];
+    out.push(...oriented(ring, true));
+  }
+  return out;
+}
+
+/** Net area of Clipper output: holes come with the opposite sign */
+const pathsArea = (paths: CPath[]) => Math.abs(paths.reduce((a, p) => a + ClipperLib.Clipper.Area(p), 0));
 
 // ---------- Clipper (robust polygon) based operations ----------
 const SCALE = 1000;
@@ -219,8 +290,29 @@ function union(paths: CPath[], evenOdd: boolean): CPath[] {
   return res;
 }
 
-/** Convert a stroke into a filled outline */
-export function strokeOutline(d: string, width: number, cap: CapKind = 'butt', join: JoinKind = 'miter', miterLimit = 4, prec = 3): string {
+/**
+ * Convert a stroke into a filled outline. Curves, round caps and round joins are kept as curves/arcs;
+ * where that outline doesn't match the exact (polygon) stroke area – tight inner curves, self-overlaps –
+ * the polygon outline is used instead.
+ */
+export function strokeOutline(d: string, width: number, capKind: CapKind = 'butt', join: JoinKind = 'miter', miterLimit = 4, prec = 3): string {
+  const poly = polygonStroke(d, width, capKind, join, miterLimit);
+  try {
+    const curved = curveStrokeOutline(d, width, capKind, join, miterLimit);
+    const fill = union(flatten(toCurves(curved), 0.02).map((p) => toClipper(p.pts)), false);
+    const c = new ClipperLib.Clipper();
+    c.AddPaths(fill, ClipperLib.PolyType.ptSubject, true);
+    c.AddPaths(poly, ClipperLib.PolyType.ptClip, true);
+    const diff = new ClipperLib.Paths();
+    c.Execute(ClipperLib.ClipType.ctXor, diff, ClipperLib.PolyFillType.pftNonZero, ClipperLib.PolyFillType.pftNonZero);
+    const ref = pathsArea(poly);
+    // tolerance: flattening error of both versions along the outline
+    if (ref > 0 && pathsArea(diff) <= Math.max(ref * 0.005, 0)) return serializePath(curved, prec);
+  } catch { /* fall back */ }
+  return clipperToD(poly, prec);
+}
+
+function polygonStroke(d: string, width: number, cap: CapKind, join: JoinKind, miterLimit: number): CPath[] {
   const flat = flatten(toCurves(parsePath(d)), 0.02);
   const co = new ClipperLib.ClipperOffset(miterLimit, 0.02 * SCALE);
   const closed = flat.filter((p) => p.closed).map((p) => toClipper(p.pts));
@@ -231,5 +323,5 @@ export function strokeOutline(d: string, width: number, cap: CapKind = 'butt', j
   const sol = new ClipperLib.Paths();
   co.Execute(sol, (width / 2) * SCALE);
   const u = union(sol, false);
-  return clipperToD(ClipperLib.Clipper.CleanPolygons(u, 0.01 * SCALE), prec);
+  return ClipperLib.Clipper.CleanPolygons(u, 0.01 * SCALE);
 }

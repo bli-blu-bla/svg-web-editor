@@ -502,6 +502,8 @@ export function expandStrokeOp(doc: Document, ids: string[], prec: number): stri
       );
       const fill = effProp(s, 'fill', '#000');
       const sOpacity = ownProp(s, 'stroke-opacity');
+      // the curve outline overlaps itself (joins, rings) and needs nonzero filling, also inside an evenodd group
+      const nonzero = (e: Element) => { if (effProp(e, 'fill-rule', 'nonzero') === 'evenodd') setProp(e, 'fill-rule', 'nonzero'); };
       const strip = (e: Element) => {
         ['stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-miterlimit', 'stroke-dasharray', 'stroke-dashoffset', 'stroke-opacity'].forEach((p) => setProp(e, p, null));
         if (effProp(e, 'stroke', 'none') !== 'none') setProp(e, 'stroke', 'none');
@@ -512,6 +514,7 @@ export function expandStrokeOp(doc: Document, ids: string[], prec: number): stri
         strip(p);
         setProp(p, 'fill', stroke);
         setProp(p, 'fill-rule', null);
+        nonzero(p);
         if (sOpacity) setProp(p, 'fill-opacity', sOpacity);
         res.push(p);
       } else {
@@ -522,6 +525,7 @@ export function expandStrokeOp(doc: Document, ids: string[], prec: number): stri
         const t = s.getAttribute('transform');
         if (t) p.setAttribute('transform', t);
         s.after(p);
+        nonzero(p);
         strip(s);
         res.push(s, p);
       }
