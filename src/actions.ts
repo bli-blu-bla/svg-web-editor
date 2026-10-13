@@ -7,7 +7,7 @@ import type { BoolOp } from './lib/area';
 import { docName, isBlank } from './lib/recent';
 import { layoutBoards } from './lib/boards';
 import { newSnapshotId } from './lib/snapshots';
-import { deleteNode, fromNodes, nodeKind, reverseSub, setNodeKind, splitAt, toNodes, type NodeKind, type NodeRef, type PNode, type SubPath } from './lib/nodes';
+import { deleteNode, fromNodes, insertNode, nodeKind, reverseSub, setNodeKind, splitAt, subdivide, toNodes, type NodeKind, type NodeRef, type PNode, type SubPath } from './lib/nodes';
 import { shapeSpec, SHAPE_LABELS, type ShapeKind } from './lib/shapes';
 import { elToRoot, getLiveRoot, liveEl, rootBBox } from './lib/live';
 
@@ -561,6 +561,41 @@ export function setPathClosed(closed: boolean) {
     targetSubs(subs).forEach((sp) => { if (sp.nodes.length > 2 || !closed) sp.closed = closed; });
     return st().nodeSel;
   });
+}
+
+/** Scissors tool: cut the path at a point of its outline */
+export function cutPath(id: string, s: number, j: number, t: number) {
+  const state = st();
+  const doc = parseSvg(state.svg);
+  const res = ops.cutPathOp(doc, id, s, j, t, state.settings.precision);
+  // nothing cut → don't commit (a shape would otherwise be converted to a path for nothing)
+  if (!res) return state.notify('Am Endpunkt eines offenen Pfads gibt es nichts zu schneiden');
+  state.commit(serialize(doc), 'Pfad schneiden', { selection: res });
+  st().set({ scope: parentIdOf(id) });
+}
+
+/** Add a node in the middle of the segment after the selected node (before it at the end of an open path) */
+export function insertNodeAfterSelected() {
+  const ref = st().nodeSel;
+  if (!ref) return st().notify('Zuerst einen Knoten anklicken');
+  editNodes('Knoten hinzufügen', (subs) => {
+    const sp = subs[ref.s];
+    if (!sp || sp.nodes.length < 2) return ref;
+    const last = !sp.closed && ref.j === sp.nodes.length - 1;
+    return insertNode(subs, ref.s, last ? ref.j - 1 : ref.j, 0.5);
+  });
+  resetSmoothNodes();
+}
+
+/** Double the nodes: a new one in the middle of every segment (of the selected subpath, or all) */
+export function subdividePath() {
+  const ref = st().nodeSel;
+  editNodes('Knoten verdoppeln', (subs) => {
+    const idx = ref && subs[ref.s] ? [ref.s] : subs.map((_, i) => i);
+    idx.forEach((i) => subdivide(subs, i));
+    return null;
+  });
+  resetSmoothNodes();
 }
 
 export function splitAtSelectedNode() {

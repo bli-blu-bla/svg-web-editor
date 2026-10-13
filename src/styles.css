@@ -543,3 +543,8 @@ kbd { font: 11px 'JetBrains Mono', monospace; color: #c4c4cc; background: var(--
 .layer.drop-above::before { top: -1px; }
 .layer.drop-below::after { bottom: -1px; }
 .layer.drop-inside { box-shadow: inset 0 0 0 1.5px var(--accent); border-radius: 6px; }
+
+/* ---------- scissors & node preview ---------- */
+.ov-cut-path { fill: none; stroke: var(--accent-2); stroke-width: 1.5; }
+.ov-cut { fill: #fff; stroke: var(--danger); stroke-width: 2; }
+.ov-ghost { fill: var(--accent-soft); stroke: var(--sel); stroke-width: 1.5; stroke-dasharray: 2 2; pointer-events: none; }

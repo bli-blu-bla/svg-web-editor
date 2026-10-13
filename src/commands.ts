@@ -81,6 +81,9 @@ export function commands(): Command[] {
     { id: 'reverse', group: 'Knoten', label: 'Pfadrichtung umkehren', when: node, run: A.reversePath },
     { id: 'close', group: 'Knoten', label: 'Pfad schließen', when: node, run: () => A.setPathClosed(true) },
     { id: 'open-path', group: 'Knoten', label: 'Pfad öffnen', when: node, run: () => A.setPathClosed(false) },
+    { id: 'node-insert', group: 'Knoten', label: 'Knoten danach einfügen', terms: 'punkt hinzufügen ergänzen', when: () => !!st().nodeSel, run: A.insertNodeAfterSelected },
+    { id: 'subdivide', group: 'Knoten', label: 'Knoten verdoppeln', terms: 'punkte hinzufügen unterteilen subdivide', when: node, run: A.subdividePath },
+    { id: 'knife', group: 'Werkzeuge', label: 'Schere: Pfad schneiden', keys: 'C', terms: 'messer cut knife trennen', run: () => st().set({ tool: 'knife' }) },
     { id: 'split', group: 'Knoten', label: 'Pfad am Knoten auftrennen', when: () => !!st().nodeSel, run: A.splitAtSelectedNode },
     { id: 'node-delete', group: 'Knoten', label: 'Knoten löschen', keys: '⌫', when: () => !!st().nodeSel, run: A.deleteSelectedNode },
     ...(['corner', 'smooth', 'symmetric'] as const).map((k): Command => ({

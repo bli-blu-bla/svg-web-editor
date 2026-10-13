@@ -9,7 +9,7 @@ import { docName, loadRecent, newDocId, saveRecent, upsertRecent, type RecentDoc
 import { loadSnapshots, moveSnapshots, saveSnapshots, type Snapshot } from './lib/snapshots';
 
 export interface Entry { svg: string; label: string; time: number; key?: string }
-export type Tool = 'select' | 'node' | 'pan' | 'shape' | 'pen';
+export type Tool = 'select' | 'node' | 'pan' | 'shape' | 'pen' | 'knife';
 export type InspectorTab = 'design' | 'path' | 'node' | 'code' | 'history';
 
 export interface Settings {

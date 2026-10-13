@@ -482,6 +482,7 @@ export function NodeTab() {
               <button className="btn" title="Geschlossenen Pfad hier öffnen bzw. offenen Pfad hier teilen" onClick={A.splitAtSelectedNode}><Scissors size={14} /> Auftrennen</button>
               <button className="btn danger" title="Knoten löschen (Entf)" onClick={A.deleteSelectedNode}><Trash2 size={14} /> Löschen</button>
             </div>
+            <button className="btn" title="Neuen Knoten in der Mitte des nächsten Segments einfügen – die Form bleibt gleich" onClick={A.insertNodeAfterSelected}><Plus size={14} /> Knoten danach einfügen</button>
           </>
         ) : <div className="hint">Einen Knoten auf der Fläche anklicken.</div>}
       </div>
@@ -492,6 +493,8 @@ export function NodeTab() {
           <button className="btn" onClick={() => A.setPathClosed(!closed)}>{closed ? 'Pfad öffnen' : 'Pfad schließen'}</button>
           <button className="btn" onClick={A.reversePath}><ArrowLeftRight size={14} /> Umkehren</button>
         </div>
+        <button className="btn" title="In jedes Segment einen Knoten einfügen – die Form bleibt gleich" onClick={A.subdividePath}><Plus size={14} /> Knoten verdoppeln</button>
+        <div className="hint">Doppelklick auf die Kontur fügt dort einen Knoten ein. Schere (C) schneidet Pfade.</div>
         <select className="select" value="" title="Typ aller Knoten des Pfads auf einmal ändern"
           onChange={(e) => { const k = e.target.value as NodeKind; if (k) A.setAllNodesKind(k); e.target.value = ''; }}>
           <option value="" disabled>Alle {total} Knoten umwandeln in …</option>

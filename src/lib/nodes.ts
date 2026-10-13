@@ -138,7 +138,7 @@ export function nearestOnPath(subs: SubPath[], p: P): { s: number; j: number; t:
   return best;
 }
 
-function pointAt(a: PNode, b: PNode, t: number): P {
+export function pointAt(a: PNode, b: PNode, t: number): P {
   const p1 = a.hout ?? a, p2 = b.hin ?? b, mt = 1 - t;
   return {
     x: mt * mt * mt * a.x + 3 * mt * mt * t * p1.x + 3 * mt * t * t * p2.x + t * t * t * b.x,
@@ -166,6 +166,24 @@ export function insertNode(subs: SubPath[], s: number, j: number, t: number): No
   }
   sp.nodes.splice(j + 1, 0, node);
   return { s, j: j + 1 };
+}
+
+/** Add a node in the middle of every segment (shape stays identical) */
+export function subdivide(subs: SubPath[], s: number) {
+  const sp = subs[s];
+  const count = sp.closed ? sp.nodes.length : sp.nodes.length - 1;
+  // walk backwards so the indices of the segments still to split don't shift
+  for (let j = count - 1; j >= 0; j--) insertNode(subs, s, j, 0.5);
+}
+
+/**
+ * Cut a subpath at a node: a closed one opens there, an open one falls apart into two.
+ * Returns the second piece of an open subpath (removed from `subs`), so it can become its own element.
+ */
+export function cutAt(subs: SubPath[], ref: NodeRef): { ok: boolean; piece: SubPath | null } {
+  const wasClosed = subs[ref.s]?.closed;
+  if (!splitAt(subs, ref)) return { ok: false, piece: null };
+  return { ok: true, piece: wasClosed ? null : subs.splice(ref.s + 1, 1)[0] };
 }
 
 const flipNode = (n: PNode): PNode => ({ x: n.x, y: n.y, hin: n.hout, hout: n.hin });

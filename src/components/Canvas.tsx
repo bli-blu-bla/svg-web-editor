@@ -8,11 +8,12 @@ import {
 import { transformEach } from '../lib/ops';
 import { GRAPHIC, SHAPES, isUnder, parentId, renderMarkup, parentMatrix, localMatrix } from '../lib/svg';
 import { elToRoot, liveEl, rootBBox, setLiveRoot, getLiveRoot } from '../lib/live';
-import { cloneSubs, fromNodes, insertNode, nearestOnPath, nodeKind, toNodes, type NodeKind, type NodeRef, type PNode, type SubPath } from '../lib/nodes';
+import { cloneSubs, fromNodes, insertNode, nearestOnPath, nodeKind, pointAt, toNodes, type NodeKind, type NodeRef, type PNode, type SubPath } from '../lib/nodes';
 import * as A from '../actions';
 import { shapeSpec, SQUARE_SHAPES } from '../lib/shapes';
 import { ContextBar, NodeBar } from './ContextBar';
 import { layoutBoards } from '../lib/boards';
+import { elementPathData } from '../lib/path';
 
 type Item = { id: string; el: SVGGraphicsElement; orig: string | null; P: Mat; L: Mat };
 type Drag =
@@ -24,6 +25,9 @@ type Drag =
   | { kind: 'node'; el: SVGPathElement; orig: SubPath[]; subs: SubPath[]; ref: NodeRef; part: 'a' | 'in' | 'out'; start: Pt; inv: Mat; moved: boolean; kind0: NodeKind };
 
 type TDrag = Extract<Drag, { items: Item[] }>;
+/** A point on an outline: element, segment after node j of subpath s at parameter t, root position, element→root matrix */
+type OutlineHit = { id: string; s: number; j: number; t: number; p: Pt; m: Mat; subs: SubPath[] };
+const NON_RENDERED = 'defs,clipPath,mask,symbol,marker,pattern';
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const CURSORS: Record<string, string> = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize' };
 
@@ -75,6 +79,10 @@ export function Canvas() {
   const setPen = (n: PNode[] | null) => { penRef.current = n; setPenState(n); };
   const [penPt, setPenPt] = useState<Pt | null>(null);
   const penClick = useRef<{ t: number; x: number; y: number } | null>(null);
+  /** scissors: where a click would cut */
+  const [knife, setKnife] = useState<OutlineHit | null>(null);
+  /** node editing: where a double-click would add a node */
+  const [ghost, setGhost] = useState<Pt | null>(null);
   const selNode = useStore((s) => s.nodeSel);
   const setSelNode = (r: NodeRef | null) => set({ nodeSel: r });
 
@@ -158,7 +166,10 @@ export function Canvas() {
 
   useEffect(() => {
     if (tool !== 'pen') { finishPen(false); setPenPt(null); }
+    if (tool !== 'knife') setKnife(null);
   }, [tool, finishPen]);
+
+  useEffect(() => { setGhost(null); }, [nodeEdit, markup.html]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -211,6 +222,39 @@ export function Canvas() {
     }
     if (e.altKey) return { box: { x: start.x - Math.abs(dx), y: start.y - Math.abs(dy), w: 2 * Math.abs(dx), h: 2 * Math.abs(dy) } };
     return { box: { x: Math.min(start.x, start.x + dx), y: Math.min(start.y, start.y + dy), w: Math.abs(dx), h: Math.abs(dy) } };
+  }
+
+  /**
+   * Closest outline point within 8 px of the pointer, over all visible paths and shapes (inside the current group if any).
+   * Snaps to an existing node when the pointer is close to it.
+   */
+  function outlineHit(p: Pt): OutlineHit | null {
+    const root = getLiveRoot();
+    if (!root) return null;
+    const sc = useStore.getState().scope;
+    const base = sc ? liveEl(sc) : root;
+    let best: OutlineHit | null = null, bestD = 8;
+    for (const el of Array.from(base?.querySelectorAll<SVGGraphicsElement>('path,rect,circle,ellipse,line,polyline,polygon') ?? [])) {
+      if (el.closest(NON_RENDERED)) continue;
+      const m = elToRoot(el);
+      const id = el.getAttribute('data-eid');
+      if (!m || !id) continue;
+      const subs = toNodes(elementPathData(el));
+      const lp = apply(inv(m), p.x, p.y);
+      const h = nearestOnPath(subs, lp);
+      if (!h) continue;
+      const sp = subs[h.s], a = sp.nodes[h.j], b = sp.nodes[(h.j + 1) % sp.nodes.length];
+      const lq = pointAt(a, b, h.t), q = apply(m, lq.x, lq.y);
+      const d = Math.hypot(q.x - p.x, q.y - p.y) * zoom;
+      if (d >= bestD) continue;
+      bestD = d;
+      // snap onto a node nearby
+      const sa = apply(m, a.x, a.y), sb = apply(m, b.x, b.y);
+      const da = Math.hypot(sa.x - p.x, sa.y - p.y) * zoom, db = Math.hypot(sb.x - p.x, sb.y - p.y) * zoom;
+      const t = da < 6 && da <= db ? 0 : db < 6 ? 1 : h.t;
+      best = { id, s: h.s, j: h.j, t, p: t === 0 ? sa : t === 1 ? sb : q, m, subs };
+    }
+    return best;
   }
 
   function pick(target: Element, deep: boolean, scopeId = useStore.getState().scope): string | null {
@@ -289,6 +333,11 @@ export function Canvas() {
       drag.current = { kind: 'pen', cx: e.clientX, cy: e.clientY, moved: false };
       return;
     }
+    if (tool === 'knife') {
+      const h = outlineHit(p);
+      if (h) { A.cutPath(h.id, h.s, h.j, h.t); setKnife(null); }
+      return;
+    }
     if (tool === 'shape') {
       const sp = settings.snap ? { x: snap(p.x), y: snap(p.y) } : p;
       drag.current = { kind: 'draw', start: sp, cx: e.clientX, cy: e.clientY, moved: false };
@@ -352,6 +401,18 @@ export function Canvas() {
     if (!d || d.kind !== 'pan') set({ cursor: toRoot(e) });
     if (!d) {
       if (tool === 'pen') { const n = penRef.current; setPenPt(penPoint(toRoot(e), e.shiftKey, n?.[n.length - 1])); return; }
+      if (tool === 'knife') { setKnife(outlineHit(toRoot(e))); return; }
+      if (nodeEdit && nodeSubs && nodeMat) {
+        // preview where a double-click adds a node, unless a node or handle is under the pointer
+        const rp = toRoot(e);
+        const h = (e.target as Element).closest('[data-handle]') ? null : nearestOnPath(nodeSubs, apply(inv(nodeMat), rp.x, rp.y));
+        const scale = Math.sqrt(Math.abs(nodeMat[0] * nodeMat[3] - nodeMat[1] * nodeMat[2])) * zoom;
+        if (h && h.dist * scale < 8) {
+          const sp = nodeSubs[h.s];
+          const q = pointAt(sp.nodes[h.j], sp.nodes[(h.j + 1) % sp.nodes.length], h.t);
+          setGhost(apply(nodeMat, q.x, q.y));
+        } else if (ghost) setGhost(null);
+      }
       if (tool === 'pan' || tool === 'shape' || space.current) return;
       const id = pick(e.target as Element, e.metaKey || e.ctrlKey || tool === 'node');
       if (id !== useStore.getState().hoverId) set({ hoverId: id });
@@ -661,6 +722,19 @@ export function Canvas() {
       </g>,
     );
   }
+  if (knife) {
+    const c = toVp(knife.p);
+    overlay.push(
+      <g key="knife">
+        <path className="ov-cut-path" d={fromNodes(knife.subs, 6)} transform={`matrix(${mulAll(V, knife.m).join(' ')})`} vectorEffect="non-scaling-stroke" />
+        <circle className="ov-cut" cx={c.x} cy={c.y} r={knife.t === 0 || knife.t === 1 ? 6 : 4.5} />
+      </g>,
+    );
+  }
+  if (ghost && nodeEdit && !drag.current) {
+    const c = toVp(ghost);
+    overlay.push(<circle key="ghost" className="ov-ghost" cx={c.x} cy={c.y} r={4} />);
+  }
   if (marquee) overlay.push(<polygon key="mq" className="ov-marquee" points={ptsStr(poly(marquee, null))} />);
   if (scope) {
     const sb = rootBBox(scope);
@@ -679,11 +753,11 @@ export function Canvas() {
   return (
     <div
       ref={vpRef}
-      className={`viewport ${tool === 'pan' || spaceDown ? 'panning' : ''} ${tool === 'node' || tool === 'shape' || tool === 'pen' ? 'node-tool' : ''}`}
+      className={`viewport ${tool === 'pan' || spaceDown ? 'panning' : ''} ${tool === 'node' || tool === 'shape' || tool === 'pen' || tool === 'knife' ? 'node-tool' : ''}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onPointerLeave={() => !drag.current && set({ hoverId: null, cursor: null })}
+      onPointerLeave={() => { if (!drag.current) { set({ hoverId: null, cursor: null }); setKnife(null); setGhost(null); } }}
       onDoubleClick={onDoubleClick}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
@@ -709,7 +783,7 @@ export function Canvas() {
       ))}
       <svg className="overlay">{overlay}</svg>
       {markup.error && <div className="canvas-error">SVG-Fehler: {markup.error}</div>}
-      {settings.contextBar && !dragM && !marquee && !draw && tool !== 'shape' && tool !== 'pan' && tool !== 'pen' && (() => {
+      {settings.contextBar && !dragM && !marquee && !draw && tool !== 'shape' && tool !== 'pan' && tool !== 'pen' && tool !== 'knife' && (() => {
         const vw = vpRef.current?.clientWidth ?? 800;
         const clampX = (x: number) => Math.max(170, Math.min(vw - 170, x));
         if (nodeEdit && selNode && nodeSubs && nodeMat) {
@@ -735,7 +809,14 @@ export function Canvas() {
           <span><kbd>⌫</kbd> Letzten Punkt entfernen</span>
         </div>
       )}
-      {nodeEdit && (
+      {tool === 'knife' && (
+        <div className="key-hints">
+          <span><kbd>Klick auf Kontur</kbd> Pfad schneiden</span>
+          <span>Offene Pfade zerfallen in zwei, geschlossene werden geöffnet</span>
+          <span><kbd>Esc</kbd> Fertig</span>
+        </div>
+      )}
+      {nodeEdit && tool !== 'knife' && (
         <div className="key-hints">
           <span><kbd>Doppelklick</kbd> Ecke ↔ Glatt</span>
           <span><kbd>Doppelklick Kontur</kbd> Knoten einfügen</span>

@@ -1,4 +1,4 @@
-import { AlignCenterHorizontal, AlignCenterVertical, Copy, Scissors, Spline, Trash2 } from 'lucide-react';
+import { AlignCenterHorizontal, AlignCenterVertical, Copy, Plus, Scissors, Spline, Trash2 } from 'lucide-react';
 import { useStore } from '../store';
 import * as A from '../actions';
 import { getEl, parseSvg, SHAPES } from '../lib/svg';
@@ -72,6 +72,7 @@ export function NodeBar({ x, y, node }: { x: number; y: number; node: PNode }) {
         </Btn>
       ))}
       <Sep />
+      <Btn title="Knoten danach einfügen (Mitte des nächsten Segments)" onClick={A.insertNodeAfterSelected}><Plus size={16} /></Btn>
       <Btn title="Pfad an diesem Knoten auftrennen" onClick={A.splitAtSelectedNode}><Scissors size={16} /></Btn>
       <Btn title="Knoten löschen (⌫)" danger onClick={A.deleteSelectedNode}><Trash2 size={16} /></Btn>
     </Bar>

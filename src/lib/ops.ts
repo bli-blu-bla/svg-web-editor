@@ -4,6 +4,7 @@ import { curveOffset, strokeOutline, type CapKind, type JoinKind } from './offse
 import { roundCorners, type ShapeSpec } from './shapes';
 import { areaToD, booleanAreas, offsetArea, SCALE, shapeArea, unionAll, type BoolOp, type CPaths, type ShapeStyle } from './area';
 import { centerline, type CenterLine } from './centerline';
+import { cutAt, fromNodes, insertNode, toNodes } from './nodes';
 import {
   COLOR_PROPS, GRAPHIC, SHAPES, SVGNS, docSize, effProp, elsOf, getEl, idOf, kids, localMatrix, normalizeColor,
   ownProp, parentMatrix, parseSvg, setProp, topmost,
@@ -272,6 +273,30 @@ export function moveEls(doc: Document, ids: string[], targetId: string, pos: Dro
     return (next ? next.previousSibling : parent.lastChild) as Element;
   });
   return track(moved)();
+}
+
+/**
+ * Scissors: cut a path (shapes are converted first) on the segment after node j at parameter t
+ * (t = 0 cuts at the node itself). The piece split off an open path becomes its own element.
+ */
+export function cutPathOp(doc: Document, id: string, s: number, j: number, t: number, prec: number): string[] | null {
+  const el0 = getEl(doc, id);
+  if (!el0) return null;
+  const el = toPathElement(el0, prec);
+  if (el.localName !== 'path') return null;
+  const subs = toNodes(el.getAttribute('d'));
+  const sp = subs[s];
+  if (!sp) return null;
+  const ref = t <= 1e-6 ? { s, j } : t >= 1 - 1e-6 ? { s, j: (j + 1) % sp.nodes.length } : insertNode(subs, s, j, t);
+  const { ok, piece } = cutAt(subs, ref);
+  if (!ok) return null;
+  el.setAttribute('d', fromNodes(subs, prec));
+  if (!piece) return [idOf(el)];
+  const twin = el.cloneNode(false) as Element;
+  twin.removeAttribute('id');
+  twin.setAttribute('d', fromNodes([piece], prec));
+  el.after(twin);
+  return [idOf(el), idOf(twin)];
 }
 
 export function convertToPath(doc: Document, ids: string[], prec: number): string[] {
