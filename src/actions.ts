@@ -266,6 +266,20 @@ export function setDocAttrs(attrs: Record<string, string | null>) {
   edit('Dokument', (doc) => { ops.setDocAttrs(doc, attrs); });
 }
 
+/** Scale the document and everything in it to a new size */
+export function rescaleDocument(w: number, h: number) {
+  if (!(w > 0 && h > 0)) return st().notify('Ungültige Größe');
+  edit(`Skalieren auf ${+w.toFixed(3)} × ${+h.toFixed(3)}`, (doc) => { ops.rescaleDocument(doc, w, h, st().settings.precision); });
+  st().set({ fitReq: st().fitReq + 1 });
+}
+
+export function promptRescale() {
+  const size = docSize(parseSvg(st().svg).documentElement);
+  const v = window.prompt(`Dokument mit Inhalt skalieren auf (Breite x Höhe) – aktuell ${+size.w.toFixed(3)} × ${+size.h.toFixed(3)}`, `${+size.w.toFixed(3)} x ${+size.h.toFixed(3)}`);
+  if (!v) return;
+  const [w, h] = v.split(/[x×, ]+/).map(Number);
+  rescaleDocument(w, h > 0 ? h : (w * size.h) / size.w);
+}
 
 // ---------- clipboard ----------
 function selectionFragments(): string[] {

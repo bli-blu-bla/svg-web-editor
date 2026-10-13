@@ -42,6 +42,7 @@ export function commands(): Command[] {
     { id: 'copy-svg', group: 'Datei', label: 'SVG-Code kopieren', terms: 'zwischenablage', run: A.copySvg },
     { id: 'minify', group: 'Datei', label: 'Minify auf Dokument anwenden', terms: 'svgo optimieren verkleinern', run: A.minifyDocument },
     { id: 'format', group: 'Datei', label: 'Code formatieren', terms: 'einrücken pretty', run: A.formatDocument },
+    { id: 'rescale', group: 'Datei', label: 'Dokument skalieren …', terms: 'größe ändern resize rescale pfade anpassen', run: A.promptRescale },
     { id: 'fit-doc', group: 'Datei', label: 'Dokument an Inhalt anpassen', terms: 'viewbox zuschneiden crop', run: () => A.fitDocumentToContent() },
 
     // Bearbeiten

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import {
   AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
   AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, FlipHorizontal2, FlipVertical2, RotateCcw, RotateCw,
-  Lock, Unlock, Copy, Trash2, Group, Ungroup, BringToFront, SendToBack, ArrowUp, ArrowDown, Ban, Plus, X, Scissors, ArrowLeftRight,
+  Lock, Unlock, Maximize2, Copy, Trash2, Group, Ungroup, BringToFront, SendToBack, ArrowUp, ArrowDown, Ban, Plus, X, Scissors, ArrowLeftRight,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { SHAPE_LABELS } from '../lib/shapes';
@@ -341,6 +341,40 @@ function AttrArea({ value, onCommit }: { value: string; onCommit: (v: string) =>
 
 const SIZE_PRESETS = [16, 20, 24, 32, 48, 64, 128, 256];
 
+/** Scale the document together with all paths, e.g. 412×412 → 32×32 */
+function RescaleSection({ size }: { size: { w: number; h: number } }) {
+  const keepRatio = useStore((s) => s.settings.keepRatio);
+  const setSettings = useStore((s) => s.setSettings);
+  const [target, setTarget] = useState({ w: size.w, h: size.h });
+  // follow the document when it changes (undo, other artboard …)
+  const [base, setBase] = useState(size);
+  if (base.w !== size.w || base.h !== size.h) { setBase(size); setTarget({ w: size.w, h: size.h }); }
+  const r = size.h / size.w;
+  const setW = (w: number) => setTarget({ w, h: keepRatio ? +(w * r).toFixed(3) : target.h });
+  const setH = (h: number) => setTarget({ h, w: keepRatio ? +(h / r).toFixed(3) : target.w });
+  const same = target.w === size.w && target.h === size.h;
+  return (
+    <Section title="Skalieren">
+      <div className="dims">
+        <div className="grid2">
+          <NumField label="B" value={target.w} onCommit={(w) => w > 0 && setW(w)} />
+          <NumField label="H" value={target.h} onCommit={(h) => h > 0 && setH(h)} />
+        </div>
+        <IconBtn title="Seitenverhältnis sperren" className="field-btn" icon={keepRatio ? <Lock size={14} /> : <Unlock size={14} />} active={keepRatio} onClick={() => setSettings({ keepRatio: !keepRatio })} />
+      </div>
+      <div className="chips">
+        {SIZE_PRESETS.map((n) => (
+          <button key={n} className={`chip ${target.w === n ? 'on' : ''}`} title={`Breite ${n}`} onClick={() => setW(n)}>{n}</button>
+        ))}
+      </div>
+      <button className="btn primary wide" disabled={same || !(target.w > 0 && target.h > 0)} onClick={() => A.rescaleDocument(target.w, target.h)}
+        title="viewBox, width/height, alle Pfade, Formen und Konturbreiten auf die neue Größe umrechnen">
+        <Maximize2 size={14} /> {same ? 'Skalieren' : `${+size.w.toFixed(3)} × ${+size.h.toFixed(3)} → ${target.w} × ${target.h}`}
+      </button>
+    </Section>
+  );
+}
+
 function DocumentSection({ doc }: { doc: Document }) {
   const root = doc.documentElement;
   const size = docSize(root);
@@ -362,6 +396,7 @@ function DocumentSection({ doc }: { doc: Document }) {
         </div>
         <button className="btn" onClick={() => A.fitDocumentToContent()} title="viewBox genau um die Zeichnung legen">An Inhalt anpassen</button>
       </Section>
+      <RescaleSection size={size} />
       <Section title="Ausgabegröße">
         <div className="grid2">
           <TextField value={w ?? ''} placeholder="auto" mono onCommit={(v) => A.setDocAttrs({ width: v.trim() || null })} />

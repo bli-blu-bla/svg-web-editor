@@ -5,7 +5,7 @@ import { roundCorners, type ShapeSpec } from './shapes';
 import { areaToD, booleanAreas, offsetArea, SCALE, shapeArea, unionAll, type BoolOp, type CPaths, type ShapeStyle } from './area';
 import { centerline, type CenterLine } from './centerline';
 import {
-  COLOR_PROPS, SHAPES, SVGNS, effProp, elsOf, getEl, idOf, kids, localMatrix, normalizeColor,
+  COLOR_PROPS, GRAPHIC, SHAPES, SVGNS, docSize, effProp, elsOf, getEl, idOf, kids, localMatrix, normalizeColor,
   ownProp, parentMatrix, parseSvg, setProp, topmost,
 } from './svg';
 
@@ -510,6 +510,42 @@ export function setDocAttrs(doc: Document, attrs: Record<string, string | null>)
   for (const [k, v] of Object.entries(attrs)) {
     if (v === null || v === '') r.removeAttribute(k); else r.setAttribute(k, v);
   }
+}
+
+/**
+ * Scale the whole drawing to a new document size: the viewBox becomes `0 0 w h` and every element's
+ * geometry (and stroke width) is rewritten. Elements that can't be baked (text, use, gradients …) keep a transform.
+ */
+export function rescaleDocument(doc: Document, w: number, h: number, prec: number) {
+  const root = doc.documentElement;
+  const old = docSize(root);
+  const sx = w / old.w, sy = h / old.h;
+  const M: Mat = [sx, 0, 0, sy, -old.x * sx, -old.y * sy];
+  const ss = Math.sqrt(Math.abs(sx * sy));
+  const rootStroke = !!ownProp(root, 'stroke-width');
+  for (const c of kids(root)) {
+    if (!GRAPHIC.has(c.localName)) continue;
+    const cm = mul(M, localMatrix(c));
+    c.removeAttribute('transform');
+    if (bakeInto(c, cm, prec, ss, rootStroke)) continue;
+    const p = SHAPES.has(c.localName) ? toPathElement(c, prec) : c;
+    if (p !== c && bakeInto(p, cm, prec, ss, rootStroke)) continue;
+    if (p.localName === 'svg') {
+      // nested <svg> doesn't reliably support transform → wrap it
+      const g = doc.createElementNS(SVGNS, 'g');
+      p.replaceWith(g);
+      g.appendChild(p);
+      setTransform(g, cm, prec);
+    } else setTransform(p, cm, prec);
+  }
+  if (rootStroke) {
+    const v = parseFloat(ownProp(root, 'stroke-width')!);
+    if (isFinite(v)) setProp(root, 'stroke-width', fmt(v * ss, 3));
+  }
+  const f = (v: number) => fmt(v, prec);
+  root.setAttribute('viewBox', `0 0 ${f(w)} ${f(h)}`);
+  if (root.hasAttribute('width')) root.setAttribute('width', f(w));
+  if (root.hasAttribute('height')) root.setAttribute('height', f(h));
 }
 
 export function insertShape(doc: Document, spec: ShapeSpec, style: Record<string, string>, scopeId: string, prec: number): string[] {
