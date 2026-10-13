@@ -2,13 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { xml } from '@codemirror/lang-xml';
 import { EditorView } from '@codemirror/view';
-import { Download, Copy, Wand2, AlignLeft, Check } from 'lucide-react';
+import { Download, Copy, Wand2, AlignLeft, Check, Camera, RotateCcw, Trash2 } from 'lucide-react';
 import { useStore, type InspectorTab } from '../store';
 import { DesignTab, NodeTab, PathTab } from './Properties';
 import * as A from '../actions';
 import { tryParse } from '../lib/svg';
 import { byteSize, fmtBytes, minify } from '../lib/minify';
-import { Section, Toggle } from './ui';
+import { Section, TextField, Toggle } from './ui';
+import { thumbSrc } from '../lib/recent';
 
 const TABS: { id: InspectorTab; label: string }[] = [
   { id: 'node', label: 'Knoten' },
@@ -104,14 +105,47 @@ function CodePane() {
   );
 }
 
+const snapTime = (t: number) => {
+  const d = new Date(t);
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} ${time}`;
+};
+
+function SnapshotList() {
+  const snapshots = useStore((s) => s.snapshots);
+  const svg = useStore((s) => s.svg);
+  return (
+    <div className="snapshots">
+      <div className="snap-head">
+        <span className="sub">Snapshots{snapshots.length ? ` · ${snapshots.length}` : ''}</span>
+        <button className="btn sm primary" title="Aktuellen Stand speichern (⇧⌘S)" onClick={A.takeSnapshot}><Camera size={13} /> Speichern</button>
+      </div>
+      {!snapshots.length && <div className="hint">Speichere einen Stand, um später dorthin zurückzukehren. Snapshots bleiben auch nach dem Neuladen erhalten.</div>}
+      {snapshots.map((x) => (
+        <div key={x.id} className={`snap ${x.svg === svg ? 'on' : ''}`}>
+          <button className="snap-thumb" title="Wiederherstellen" onClick={() => A.restoreSnapshot(x.id)}><img src={thumbSrc(x.svg)} alt="" draggable={false} /></button>
+          <div className="snap-info">
+            <TextField value={x.name} onCommit={(v) => A.renameSnapshot(x.id, v)} className="snap-name" />
+            <time>{x.svg === svg ? 'aktueller Stand' : snapTime(x.time)}</time>
+          </div>
+          <button className="iconbtn" title="Wiederherstellen (lässt sich rückgängig machen)" disabled={x.svg === svg} onClick={() => A.restoreSnapshot(x.id)}><RotateCcw size={14} /></button>
+          <button className="iconbtn danger" title="Snapshot löschen" onClick={() => A.deleteSnapshot(x.id)}><Trash2 size={14} /></button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function HistoryPane() {
   const history = useStore((s) => s.history);
   const index = useStore((s) => s.index);
   const jump = useStore((s) => s.jump);
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => { ref.current?.querySelector('.on')?.scrollIntoView({ block: 'nearest' }); }, [index]);
+  useEffect(() => { ref.current?.querySelector('.hist.on')?.scrollIntoView({ block: 'nearest' }); }, [index]);
   return (
     <div className="history" ref={ref}>
+      <SnapshotList />
+      <div className="sub hist-title">Bearbeitungsverlauf</div>
       {history.map((h, i) => (
         <button key={i} className={`hist ${i === index ? 'on' : ''} ${i > index ? 'future' : ''}`} onClick={() => jump(i)}>
           <span>{h.label}</span>

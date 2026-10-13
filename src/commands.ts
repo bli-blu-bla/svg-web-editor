@@ -37,6 +37,8 @@ export function commands(): Command[] {
     { id: 'new', group: 'Datei', label: 'Neues Dokument', run: A.newDocument },
     { id: 'open', group: 'Datei', label: 'SVG öffnen …', keys: '⌘O', terms: 'datei laden import', run: () => document.getElementById('file-input')?.click() },
     { id: 'download', group: 'Datei', label: 'SVG herunterladen', keys: '⌘S', terms: 'speichern export', run: () => A.download() },
+    { id: 'snapshot', group: 'Datei', label: 'Snapshot speichern', keys: '⇧⌘S', terms: 'zwischenspeichern stand sichern version', run: A.takeSnapshot },
+    { id: 'snapshots', group: 'Datei', label: 'Snapshots anzeigen', terms: 'wiederherstellen stand version', run: () => st().set({ inspectorTab: 'history' }) },
     { id: 'copy-svg', group: 'Datei', label: 'SVG-Code kopieren', terms: 'zwischenablage', run: A.copySvg },
     { id: 'minify', group: 'Datei', label: 'Minify auf Dokument anwenden', terms: 'svgo optimieren verkleinern', run: A.minifyDocument },
     { id: 'format', group: 'Datei', label: 'Code formatieren', terms: 'einrücken pretty', run: A.formatDocument },

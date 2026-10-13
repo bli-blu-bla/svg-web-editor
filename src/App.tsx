@@ -33,7 +33,7 @@ function useShortcuts() {
       else if (mod && k === 'g') { stop(); if (e.shiftKey) A.ungroupSelection(); else A.groupSelection(); }
       else if (mod && e.code === 'BracketRight') { stop(); A.arrange(e.shiftKey ? 'front' : 'forward'); }
       else if (mod && e.code === 'BracketLeft') { stop(); A.arrange(e.shiftKey ? 'back' : 'backward'); }
-      else if (mod && k === 's') { stop(); A.download(); }
+      else if (mod && k === 's') { stop(); if (e.shiftKey) A.takeSnapshot(); else A.download(); }
       else if (mod && k === 'o') { stop(); (document.getElementById('file-input') as HTMLInputElement)?.click(); }
       else if (mod && (k === '=' || k === '+')) { stop(); A.zoomBy(1.25); }
       else if (mod && k === '-') { stop(); A.zoomBy(0.8); }

@@ -6,6 +6,7 @@ import type { JoinKind } from './lib/offset';
 import type { ShapeKind } from './lib/shapes';
 import type { NodeRef } from './lib/nodes';
 import { docName, loadRecent, newDocId, saveRecent, upsertRecent, type RecentDoc } from './lib/recent';
+import { loadSnapshots, moveSnapshots, saveSnapshots, type Snapshot } from './lib/snapshots';
 
 export interface Entry { svg: string; label: string; time: number; key?: string }
 export type Tool = 'select' | 'node' | 'pan' | 'shape' | 'pen';
@@ -73,6 +74,8 @@ interface State {
   docId: string;
   docName: string;
   recent: RecentDoc[];
+  /** saved states of the open document, newest first */
+  snapshots: Snapshot[];
 
   commit: (svg: string, label: string, opts?: { selection?: string[]; key?: string }) => void;
   undo: () => void;
@@ -86,6 +89,8 @@ interface State {
   openDoc: (svg: string, name: string, id?: string, label?: string) => void;
   renameRecent: (id: string, name: string) => void;
   removeRecent: (id: string) => void;
+  /** Replace the open document's snapshots; returns false when they could not be stored */
+  setSnapshots: (list: Snapshot[]) => boolean;
 }
 
 const LS_DOC = 'svg-editor-doc';
@@ -168,6 +173,7 @@ export const useStore = create<State>((set, get) => ({
   docId: initialId,
   docName: initialName,
   recent: initialRecent,
+  snapshots: loadSnapshots(initialId),
 
   commit: (svg, label, opts = {}) => {
     const s = get();
@@ -215,7 +221,7 @@ export const useStore = create<State>((set, get) => ({
   openDoc: (svg, name, id = newDocId(), label = 'Geöffnet') => {
     flushSave();
     set({
-      svg, docId: id, docName: name, history: [{ svg, label, time: Date.now() }], index: 0,
+      svg, docId: id, docName: name, snapshots: loadSnapshots(id), history: [{ svg, label, time: Date.now() }], index: 0,
       selection: [], scope: '', nodeEdit: null, nodeSel: null, smoothNodes: [], fitReq: get().fitReq + 1,
     });
     persist();
@@ -228,7 +234,21 @@ export const useStore = create<State>((set, get) => ({
   removeRecent: (id) => {
     const s = get();
     set({ recent: saveRecent(s.recent.filter((d) => d.id !== id)) });
-    // the open document lives on as a new entry on its next change
-    if (id === s.docId) set({ docId: newDocId() });
+    if (id === s.docId) {
+      // the open document lives on as a new entry on its next change, and keeps its snapshots
+      const docId = newDocId();
+      moveSnapshots(id, docId);
+      set({ docId });
+    } else {
+      try { saveSnapshots(id, []); } catch { /* ignore */ }
+    }
+  },
+  setSnapshots: (list) => {
+    try {
+      set({ snapshots: saveSnapshots(get().docId, list) });
+      return true;
+    } catch {
+      return false;
+    }
   },
 }));

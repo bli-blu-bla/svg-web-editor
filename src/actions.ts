@@ -5,6 +5,7 @@ import { cleanSvgString, getEl, isSelectable, kids, parseSvg, serialize, idOf, d
 import { minify } from './lib/minify';
 import type { BoolOp } from './lib/area';
 import { docName } from './lib/recent';
+import { newSnapshotId } from './lib/snapshots';
 import { deleteNode, fromNodes, nodeKind, reverseSub, setNodeKind, splitAt, toNodes, type NodeKind, type NodeRef, type PNode, type SubPath } from './lib/nodes';
 import { shapeSpec, SHAPE_LABELS, type ShapeKind } from './lib/shapes';
 import { elToRoot, getLiveRoot, liveEl, rootBBox } from './lib/live';
@@ -286,6 +287,39 @@ export function download(name = fileName(), content = st().svg) {
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ---------- snapshots ----------
+
+export function takeSnapshot() {
+  const s = st();
+  const last = s.snapshots[0];
+  if (last && last.svg === s.svg) return s.notify(`Unverändert seit „${last.name}“`);
+  const name = 'Snapshot ' + (s.snapshots.length + 1);
+  const ok = s.setSnapshots([{ id: newSnapshotId(), name, svg: s.svg, time: Date.now() }, ...s.snapshots]);
+  s.notify(ok ? `„${name}“ gespeichert` : 'Snapshot konnte nicht gespeichert werden – Browser-Speicher ist voll');
+}
+
+/** Bring a snapshot back as a normal edit, so it can be undone */
+export function restoreSnapshot(id: string) {
+  const s = st();
+  const snap = s.snapshots.find((x) => x.id === id);
+  if (!snap) return;
+  if (snap.svg === s.svg) return s.notify('Dokument entspricht bereits diesem Snapshot');
+  s.commit(snap.svg, `Snapshot: ${snap.name}`, { selection: [] });
+  s.notify(`„${snap.name}“ wiederhergestellt`);
+}
+
+export function renameSnapshot(id: string, name: string) {
+  const s = st();
+  const n = name.trim();
+  if (!n) return;
+  s.setSnapshots(s.snapshots.map((x) => (x.id === id ? { ...x, name: n } : x)));
+}
+
+export function deleteSnapshot(id: string) {
+  const s = st();
+  s.setSnapshots(s.snapshots.filter((x) => x.id !== id));
 }
 
 export function copySvg() {

@@ -229,6 +229,22 @@ code, kbd, .mono { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, 
 .hist.future { opacity: .45; }
 .hist time { color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .history .hint { padding: 10px; }
+.snapshots { display: flex; flex-direction: column; gap: 4px; padding-bottom: 10px; margin-bottom: 6px; border-bottom: 1px solid var(--border-soft); }
+.snap-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 2px 4px 10px; }
+.snap { display: flex; align-items: center; gap: 6px; padding: 4px; border-radius: 8px; border: 1px solid transparent; }
+.snap:hover { background: var(--panel-2); }
+.snap.on { border-color: var(--accent); background: var(--accent-soft); }
+.snap-thumb {
+  flex: none; width: 40px; height: 40px; padding: 5px; border: 0; border-radius: 6px; cursor: pointer; display: flex;
+  background: #f4f4f6 repeating-conic-gradient(#e6e6ea 0 25%, transparent 0 50%) 0 0 / 10px 10px;
+}
+.snap-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.snap-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.snap-info .textfield { flex: none; height: 24px; padding: 0 6px; background: transparent; }
+.snap-info .textfield:hover, .snap-info .textfield:focus { background: var(--field); }
+.snap-info time { color: var(--muted); font-size: 11px; padding-left: 7px; font-variant-numeric: tabular-nums; }
+.hist-title { padding: 4px 10px; }
+.iconbtn.danger:hover:not(:disabled) { background: rgba(240,113,120,.15); color: var(--danger); }
 
 /* ---------- export ---------- */
 .previews { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
