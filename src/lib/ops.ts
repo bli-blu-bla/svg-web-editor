@@ -1,4 +1,4 @@
-import { det, inv, isAxisAligned, isIdentity, isSimilarity, matrixToString, mul, mulAll, fmt, apply, transformBox, type Mat } from './matrix';
+import { det, inv, isAxisAligned, isIdentity, isSimilarity, matrixToString, mul, mulAll, fmt, apply, transformBox, translate, type Mat } from './matrix';
 import { elementPathData, parsePath, parsePoints, serializePath, transformPath, type P2 } from './path';
 import { curveOffset, strokeOutline, type CapKind, type JoinKind } from './offset';
 import { roundCorners, type ShapeSpec } from './shapes';
@@ -352,6 +352,42 @@ export function insertFragments(doc: Document, frags: string[], targetId: string
       added.push(node);
     }
   }
+  return track(added)();
+}
+
+/** Root attributes of a pasted SVG that its content inherits – kept on a wrapper group */
+const INHERITABLE_ROOT = /^(fill|stroke|color|opacity|style|clip-rule|paint-order|vector-effect|font-.*|text-anchor)(-.*)?$/;
+
+/**
+ * Insert a complete SVG (e.g. an icon copied from a website), scaled so its viewBox becomes w × h
+ * and placed with its top-left corner at (x, y) in root coordinates.
+ */
+export function importSvg(doc: Document, text: string, w: number, h: number, x: number, y: number, targetId: string, ctx: Ctx): string[] {
+  const src = parseSvg(text);
+  rescaleDocument(src, w, h, ctx.prec);
+  const root = src.documentElement;
+  const target = getEl(doc, targetId) || doc.documentElement;
+  const items: Element[] = [];
+  for (const c of kids(root)) {
+    if (c.localName === 'defs') {
+      let defs = doc.documentElement.querySelector(':scope > defs');
+      if (!defs) { defs = doc.createElementNS(SVGNS, 'defs'); doc.documentElement.prepend(defs); }
+      while (c.firstChild) defs.appendChild(doc.importNode(c.firstChild, true));
+    } else if (GRAPHIC.has(c.localName)) items.push(doc.importNode(c, true) as Element);
+  }
+  if (!items.length) return [];
+  const attrs = Array.from(root.attributes).filter((a) => INHERITABLE_ROOT.test(a.name));
+  let added = items;
+  if (items.length > 1 || attrs.length) {
+    const g = doc.createElementNS(SVGNS, 'g');
+    for (const a of attrs) g.setAttribute(a.name, a.value);
+    g.append(...items);
+    added = [g];
+  }
+  target.append(...added);
+  // content sits at 0,0 in the scope's coordinates → move it to (x, y) in root coordinates
+  const m = mul(translate(x, y), inv(parentMatrix(added[0])));
+  if (!isIdentity(m)) transformAll(doc, added.map(idOf), m, ctx);
   return track(added)();
 }
 

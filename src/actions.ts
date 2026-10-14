@@ -360,6 +360,9 @@ function selectionFragments(): string[] {
   return s.selection.map((id) => getEl(doc, id)).filter((e): e is Element => !!e).map((e) => ser.serializeToString(e));
 }
 
+/** what copySelection last put on the system clipboard – pasting it back skips the import dialog */
+let lastCopied = '';
+
 export function copySelection(cut = false) {
   const s = st();
   if (!s.selection.length) return;
@@ -368,16 +371,49 @@ export function copySelection(cut = false) {
   const root = parseSvg(s.svg).documentElement;
   const vb = root.getAttribute('viewBox');
   const text = `<svg xmlns="${SVGNS}"${vb ? ` viewBox="${vb}"` : ''}>${frags.join('')}</svg>`;
+  lastCopied = text;
   navigator.clipboard?.writeText(text).catch(() => {});
   if (cut) deleteSelection();
   else s.notify(`${frags.length} Element(e) kopiert`);
 }
 
+export const isSvgCode = (text: string | null | undefined): text is string => !!text && /<svg[\s>]/.test(text);
+
 export function pasteText(text: string | null) {
   const s = st();
-  const frags = text && /<svg[\s>]/.test(text) ? [cleanSvgString(text)] : s.clipboard;
+  // SVG from elsewhere (an icon site, another app) → ask about size and placement first
+  if (isSvgCode(text) && text !== lastCopied) return s.set({ pasteSvg: text });
+  const frags = isSvgCode(text) ? [cleanSvgString(text)] : s.clipboard;
   if (!frags.length) return;
   edit('Einfügen', (doc) => ops.insertFragments(doc, frags, s.scope));
+}
+
+/** Open the paste dialog with the SVG from the system clipboard (or empty, to paste it there) */
+export async function promptPasteSvg() {
+  let text = '';
+  try { text = await navigator.clipboard.readText(); } catch { /* no permission – paste into the dialog */ }
+  st().set({ pasteSvg: isSvgCode(text) ? text : '' });
+}
+
+export interface ImportOpts { w: number; h: number; target: 'doc' | 'board'; place: 'center' | 'origin' }
+
+/** Insert an external SVG scaled to w × h – into the active document or as a new artboard */
+export function importSvg(text: string, o: ImportOpts) {
+  const s = st();
+  if (!(o.w > 0 && o.h > 0)) return s.notify('Ungültige Größe');
+  let clean: string;
+  try { clean = cleanSvgString(text); } catch (e) { return s.notify('Ungültiges SVG: ' + (e as Error).message); }
+  const size = `${+o.w.toFixed(3)} × ${+o.h.toFixed(3)}`;
+  if (o.target === 'board') {
+    const doc = parseSvg(clean);
+    ops.rescaleDocument(doc, o.w, o.h, s.settings.precision);
+    loadSvg(serialize(doc), `SVG eingefügt (${size})`, undefined, true);
+  } else {
+    const d = docSize(parseSvg(s.svg).documentElement);
+    const [x, y] = o.place === 'center' ? [d.x + (d.w - o.w) / 2, d.y + (d.h - o.h) / 2] : [d.x, d.y];
+    edit(`SVG eingefügt (${size})`, (doc) => ops.importSvg(doc, clean, o.w, o.h, x, y, s.scope, ctx()));
+  }
+  s.set({ pasteSvg: null });
 }
 
 // ---------- export ----------

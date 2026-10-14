@@ -39,6 +39,7 @@ export function commands(): Command[] {
     { id: 'download', group: 'Datei', label: 'SVG herunterladen', keys: '⌘S', terms: 'speichern export', run: () => A.download() },
     { id: 'snapshot', group: 'Datei', label: 'Snapshot speichern', keys: '⇧⌘S', terms: 'zwischenspeichern stand sichern version', run: A.takeSnapshot },
     { id: 'snapshots', group: 'Datei', label: 'Snapshots anzeigen', terms: 'wiederherstellen stand version', run: () => st().set({ inspectorTab: 'history' }) },
+    { id: 'paste-svg', group: 'Datei', label: 'SVG einfügen …', keys: '⌘V', terms: 'icon importieren zwischenablage skalieren rescale phosphor font awesome lucide', run: A.promptPasteSvg },
     { id: 'copy-svg', group: 'Datei', label: 'SVG-Code kopieren', terms: 'zwischenablage', run: A.copySvg },
     { id: 'minify', group: 'Datei', label: 'Minify auf Dokument anwenden', terms: 'svgo optimieren verkleinern', run: A.minifyDocument },
     { id: 'format', group: 'Datei', label: 'Code formatieren', terms: 'einrücken pretty', run: A.formatDocument },

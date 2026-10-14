@@ -78,6 +78,8 @@ interface State {
   cursor: { x: number; y: number } | null;
   paletteOpen: boolean;
   helpOpen: boolean;
+  /** SVG code shown in the paste dialog (null = closed) */
+  pasteSvg: string | null;
   /** id and name of the open document in the recent list */
   docId: string;
   docName: string;
@@ -236,6 +238,7 @@ export const useStore = create<State>((set, get) => ({
   cursor: null,
   paletteOpen: false,
   helpOpen: false,
+  pasteSvg: null,
   docId: initialId,
   docName: initialName,
   recent: initialRecent,

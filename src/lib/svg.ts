@@ -128,6 +128,16 @@ export function docSize(root: Element): DocSize {
   return { x: 0, y: 0, w: w > 0 ? w : 300, h: h > 0 ? h : 150 };
 }
 
+/** Size an SVG is shown at on its own: width/height in px (as icon sites set them), otherwise the viewBox */
+export function naturalSize(root: Element): { w: number; h: number } {
+  const vb = docSize(root);
+  const px = (a: string) => { const m = /^\s*([\d.]+)\s*(px)?\s*$/.exec(root.getAttribute(a) || ''); return m ? parseFloat(m[1]) : NaN; };
+  let w = px('width'), h = px('height');
+  if (!(w > 0) && h > 0) w = (h * vb.w) / vb.h;
+  if (!(h > 0) && w > 0) h = (w * vb.h) / vb.w;
+  return w > 0 && h > 0 ? { w, h } : { w: vb.w, h: vb.h };
+}
+
 // ---------- presentation properties ----------
 const styleOf = (el: Element) => (el as SVGElement).style as CSSStyleDeclaration | undefined;
 

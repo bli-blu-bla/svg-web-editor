@@ -9,6 +9,7 @@ import { ExportPane, Inspector } from './components/RightPanel';
 import { ToolRail } from './components/ToolRail';
 import { StatusBar } from './components/StatusBar';
 import { CommandPalette } from './components/CommandPalette';
+import { PasteDialog } from './components/PasteDialog';
 import { IconBtn, usePopover } from './components/ui';
 import { RecentMenu } from './components/RecentMenu';
 import { getEl, parseSvg, SHAPES, tryParse } from './lib/svg';
@@ -23,7 +24,7 @@ function useShortcuts() {
       const k = e.key.toLowerCase();
       const stop = () => e.preventDefault();
       if (mod && k === 'k') { stop(); s.set({ paletteOpen: !s.paletteOpen }); return; }
-      if (s.paletteOpen) return;
+      if (s.paletteOpen || s.pasteSvg !== null) return;
       if (mod && k === 'z') { stop(); if (e.shiftKey) s.redo(); else s.undo(); }
       else if (mod && k === 'y') { stop(); s.redo(); }
       else if (mod && k === 'a') { stop(); A.selectAll(); }
@@ -78,8 +79,7 @@ function useShortcuts() {
       if (typing(e.target)) return;
       const text = e.clipboardData?.getData('text/plain') ?? null;
       e.preventDefault();
-      const s = useStore.getState();
-      if (text && /<svg[\s>]/.test(text) && !s.svg.match(/<(path|rect|circle|ellipse|line|poly|g|text|use|image)\b/)) A.loadSvg(text, 'SVG eingefügt');
+      if (useStore.getState().pasteSvg !== null) { if (A.isSvgCode(text)) useStore.getState().set({ pasteSvg: text }); }
       else A.pasteText(text);
     };
     window.addEventListener('keydown', onKey);
@@ -177,7 +177,7 @@ function TopBar() {
 }
 
 const KEYS: [string, string][] = [
-  ['⌘Z / ⇧⌘Z', 'Rückgängig / Wiederholen'], ['⌘A', 'Alles auswählen'], ['⌘C / ⌘X / ⌘V', 'Kopieren / Ausschneiden / Einfügen (auch SVG-Code)'],
+  ['⌘Z / ⇧⌘Z', 'Rückgängig / Wiederholen'], ['⌘A', 'Alles auswählen'], ['⌘C / ⌘X / ⌘V', 'Kopieren / Ausschneiden / Einfügen'], ['⌘V mit fremdem SVG', 'Einfügen-Dialog: Größe (z. B. 32 → 256) und Ziel wählen'],
   ['⌘D', 'Duplizieren'], ['⌫', 'Löschen'], ['⌘G / ⇧⌘G', 'Gruppieren / aufheben'], ['⌘] / ⌘[', 'Nach vorne / hinten (⇧ = ganz)'],
   ['Pfeiltasten', 'Verschieben 1 (⇧ 10, ⌥ 0.1)'], ['⇧ beim Ziehen', 'Achse sperren / proportional / 15°-Schritte'], ['⌥ beim Skalieren', 'Von der Mitte aus'],
   ['Rahmen nach unten / oben', 'Nur vollständig enthaltene / alle berührten Elemente'], ['Knotenmodus: Rahmen / ⇧ Klick', 'Mehrere Knoten auswählen'], ['⌘ + Klick', 'Tiefes Auswählen (in Gruppen)'], ['Doppelklick / Enter', 'Gruppe betreten / Knoten bearbeiten'], ['Esc', 'Auswahl aufheben / Modus verlassen'],
@@ -227,6 +227,7 @@ export default function App() {
       <Toast />
       <CommandPalette />
       <Shortcuts />
+      <PasteDialog />
     </div>
   );
 }

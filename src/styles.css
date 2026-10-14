@@ -270,6 +270,23 @@ code, kbd, .mono { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, 
 .sc-row kbd { min-width: 150px; color: var(--accent-2); font-size: 12px; }
 .sc-row span { color: var(--muted); }
 
+/* ---------- paste dialog ---------- */
+.paste-card { width: min(480px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 10px; }
+.paste-card h3 { margin-bottom: 2px; }
+.paste-src { display: flex; gap: 10px; }
+.paste-preview {
+  width: 96px; height: 96px; flex: none; border-radius: 8px; padding: 10px; display: flex; align-items: center; justify-content: center;
+  background: #fff repeating-conic-gradient(#ececf0 0 25%, #fff 0 50%) 0 0 / 12px 12px;
+}
+.paste-preview img { max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: contain; }
+.paste-src textarea { flex: 1; height: 96px; padding: 8px; resize: none; font-size: 11.5px; line-height: 1.4; }
+.paste-info .err { color: var(--danger); }
+.paste-dims .numfield { flex: 1; }
+.paste-presets { display: flex; flex-wrap: wrap; gap: 4px; }
+.paste-presets .btn { min-width: 40px; }
+.paste-foot { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.paste-foot .hint { flex: 1; }
+
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #3a3a43; border-radius: 6px; border: 2px solid var(--panel); }
 ::-webkit-scrollbar-track { background: transparent; }
