@@ -106,8 +106,9 @@ export function Canvas() {
   const size = markup.size;
   // all artboards share one coordinate space; `pan` is where its origin sits in the viewport
   const layout = useMemo(() => layoutBoards(boards.map((b) => (b.id === docId ? { id: b.id, name: docName, svg } : b))), [boards, docId, docName, svg]);
-  const ax = layout.rects.find((r) => r.id === docId)?.x ?? 0;
-  const V: Mat = useMemo(() => [zoom, 0, 0, zoom, pan.x + (ax - size.x) * zoom, pan.y - size.y * zoom], [zoom, pan, size, ax]);
+  const active = layout.rects.find((r) => r.id === docId);
+  const ax = active?.x ?? 0, ay = active?.y ?? 0;
+  const V: Mat = useMemo(() => [zoom, 0, 0, zoom, pan.x + (ax - size.x) * zoom, pan.y + (ay - size.y) * zoom], [zoom, pan, size, ax, ay]);
   const Vi = useMemo(() => inv(V), [V]);
 
   // ---- geometry from live DOM ----
@@ -139,7 +140,7 @@ export function Canvas() {
     if (!vp) return;
     const r = vp.getBoundingClientRect();
     const z = Math.max(0.02, Math.min((r.width - 120) / size.w, (r.height - 120) / size.h, 64));
-    set({ zoom: z, pan: { x: (r.width - size.w * z) / 2 - ax * z, y: (r.height - size.h * z) / 2 } });
+    set({ zoom: z, pan: { x: (r.width - size.w * z) / 2 - ax * z, y: (r.height - size.h * z) / 2 - ay * z } });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitReq]);
 
@@ -846,8 +847,8 @@ export function Canvas() {
 
   const step = gridStep(zoom);
   const gs = step * zoom;
-  const boardStyle = (x: number, sz: { x: number; y: number; w: number; h: number }): React.CSSProperties => ({
-    left: pan.x + x * zoom, top: pan.y, width: sz.w * zoom, height: sz.h * zoom,
+  const boardStyle = (x: number, y: number, sz: { x: number; y: number; w: number; h: number }): React.CSSProperties => ({
+    left: pan.x + x * zoom, top: pan.y + y * zoom, width: sz.w * zoom, height: sz.h * zoom,
     backgroundSize: settings.grid ? `${gs}px ${gs}px, ${gs}px ${gs}px` : undefined,
     backgroundPosition: settings.grid ? `${(-sz.x % step) * zoom}px ${(-sz.y % step) * zoom}px` : undefined,
   });
@@ -870,14 +871,14 @@ export function Canvas() {
     >
       {layout.rects.map((r) => (r.id === docId
         ? (
-          <div key={r.id} className={`stage ${multi ? 'active' : ''} ${settings.grid ? 'grid' : ''}`} style={boardStyle(ax, size)}>
+          <div key={r.id} className={`stage ${multi ? 'active' : ''} ${settings.grid ? 'grid' : ''}`} style={boardStyle(ax, ay, size)}>
             <div className="doc" ref={docRef} dangerouslySetInnerHTML={{ __html: markup.html }} />
           </div>
         )
-        : <BoardPreview key={r.id} id={r.id} src={r.src} grid={settings.grid} style={boardStyle(r.x, r.size)} />))}
+        : <BoardPreview key={r.id} id={r.id} src={r.src} grid={settings.grid} style={boardStyle(r.x, r.y, r.size)} />))}
       {multi && layout.rects.map((r) => (
         <div key={r.id} className={`board-label ${r.id === docId ? 'on' : ''}`}
-          style={{ left: pan.x + r.x * zoom, top: pan.y - 26, maxWidth: Math.max(48, r.size.w * zoom) }}
+          style={{ left: pan.x + r.x * zoom, top: pan.y + r.y * zoom - 26, maxWidth: Math.max(48, r.size.w * zoom) }}
           onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
           onClick={() => { finishPen(false); useStore.getState().activateBoard(r.id); }}>
           <span>{r.name}</span>
