@@ -199,6 +199,26 @@ export function duplicate(doc: Document, ids: string[]): string[] {
   return track(clones)();
 }
 
+/** Copies of the elements, one set per matrix (the first set is the originals themselves), each set transformed by its matrix */
+export function placeCopies(doc: Document, ids: string[], mats: Mat[], ctx: Ctx): string[] {
+  const src = topmost(elsOf(doc, ids));
+  const last = [...src];
+  const sets: Element[][] = [src];
+  for (let i = 1; i < mats.length; i++) {
+    sets.push(src.map((el, j) => {
+      const c = el.cloneNode(true) as Element;
+      c.removeAttribute('id');
+      last[j].after(c);
+      last[j] = c;
+      return c;
+    }));
+  }
+  const all = sets.flat();
+  const items = sets.flatMap((set, i) => (isIdentity(mats[i]) ? [] : set.map((el) => ({ id: idOf(el), m: mats[i] }))));
+  transformEach(doc, items, ctx);
+  return track(all)();
+}
+
 export function group(doc: Document, ids: string[], prec: number): string[] {
   const els = topmost(elsOf(doc, ids));
   if (!els.length) return ids;

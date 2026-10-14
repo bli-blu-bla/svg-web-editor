@@ -287,6 +287,15 @@ code, kbd, .mono { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, 
 .paste-foot { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 .paste-foot .hint { flex: 1; }
 
+/* ---------- grid panel ---------- */
+.grid-blocker { position: fixed; inset: 0; z-index: 39; }
+.grid-panel { position: fixed; z-index: 40; top: 64px; left: 64px; width: min(420px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 10px; box-shadow: 0 20px 60px rgba(0,0,0,.55); }
+.grid-head { display: flex; align-items: center; gap: 14px; }
+.grid-head h3 { margin: 0; }
+.grid-panel .row .lbl { width: 118px; }
+.grid-panel .row .numfield { flex: 1; }
+.grid-count { white-space: nowrap; }
+
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #3a3a43; border-radius: 6px; border: 2px solid var(--panel); }
 ::-webkit-scrollbar-track { background: transparent; }

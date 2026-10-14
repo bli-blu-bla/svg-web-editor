@@ -1,4 +1,4 @@
-import { currentBoards, nodeBaseOf, selectedNodes, useStore } from './store';
+import { currentBoards, flushSave, nodeBaseOf, selectedNodes, useStore } from './store';
 import { inv as invMat, mulAll, rotateAt, scaleAt, translate, unionBoxes, type Box, type Mat, type Pt } from './lib/matrix';
 import * as ops from './lib/ops';
 import { parentId as parentIdOf, cleanSvgString, getEl, isSelectable, kids, parseSvg, serialize, idOf, docSize, prettyPrint, SHAPES, SVGNS } from './lib/svg';
@@ -10,6 +10,7 @@ import { newSnapshotId } from './lib/snapshots';
 import { deleteNode, fromNodes, insertNode, nodeKind, reverseSub, setNodeKind, splitAt, subdivide, toNodes, type NodeKind, type NodeRef, type PNode, type SubPath } from './lib/nodes';
 import { shapeSpec, SHAPE_LABELS, type ShapeKind } from './lib/shapes';
 import { elToRoot, getLiveRoot, liveEl, rootBBox } from './lib/live';
+import * as G from './lib/grid';
 
 const st = () => useStore.getState();
 export const ctx = (): ops.Ctx => {
@@ -247,6 +248,70 @@ export function distribute(axis: 'h' | 'v') {
     return { id, m: axis === 'h' ? translate(d, 0) : translate(0, d) };
   });
   edit('Verteilen', (doc) => { ops.transformEach(doc, items, ctx()); });
+}
+
+// ---------- grid ----------
+/** The document as it was when the grid panel opened – every preview is computed from it */
+export interface GridBase { svg: string; selection: string[]; items: G.Item[]; doc: Box; unit: Box; base: G.Item | null }
+let gridBase: GridBase | null = null;
+export const getGridBase = () => gridBase;
+
+export type GridParams =
+  | { mode: 'arrange'; o: G.ArrangeOpts }
+  | { mode: 'copy'; layout: 'grid'; o: G.CopyGridOpts }
+  | { mode: 'copy'; layout: 'random'; o: G.ScatterOpts; area: 'doc' | 'base' };
+
+export function openGrid(mode: 'arrange' | 'copy') {
+  const s = st();
+  const items = s.selection.map((id) => ({ id, b: rootBBox(id) })).filter((x): x is G.Item => !!x.b);
+  if (!items.length) return s.notify('Erst Elemente auswählen');
+  if (mode === 'arrange' && items.length < 2) return s.notify('Mindestens 2 Elemente zum Anordnen auswählen');
+  // previews replace the document without history – make sure nothing of them gets saved
+  flushSave();
+  const d = docSize(parseSvg(s.svg).documentElement);
+  gridBase = { svg: s.svg, selection: s.selection, items, doc: { x: d.x, y: d.y, w: d.w, h: d.h }, unit: unionBoxes(items.map((x) => x.b))!, base: G.findBase(items) };
+  s.set({ gridMode: mode, nodeEdit: null });
+}
+
+function gridResult(p: GridParams): { svg: string; selection: string[] } | null {
+  const g = gridBase;
+  if (!g) return null;
+  const doc = parseSvg(g.svg);
+  let selection: string[];
+  if (p.mode === 'arrange') {
+    ops.transformEach(doc, G.arrangeLayout(g.items, g.doc, p.o), ctx());
+    selection = g.selection;
+  } else {
+    // copying a background along with its content makes no sense for scattering into it
+    const area = p.layout === 'random' && p.area === 'base' && g.base ? g.base : null;
+    const ids = g.items.filter((it) => it !== area).map((it) => it.id);
+    const U = area ? unionBoxes(g.items.filter((it) => it !== area).map((it) => it.b))! : g.unit;
+    const mats = p.layout === 'grid' ? G.copyGrid(U, p.o) : G.scatter(U, area ? area.b : g.doc, p.o);
+    selection = ops.placeCopies(doc, ids, mats, ctx());
+  }
+  return { svg: serialize(doc), selection };
+}
+
+export function previewGrid(p: GridParams) {
+  try {
+    const r = gridResult(p);
+    if (r) st().set({ svg: r.svg, selection: r.selection });
+  } catch (e) { console.error(e); }
+}
+
+export function applyGrid(p: GridParams) {
+  const g = gridBase;
+  if (!g) return;
+  const r = gridResult(p);
+  gridBase = null;
+  st().set({ svg: g.svg, selection: g.selection, gridMode: null });
+  if (r) st().commit(r.svg, p.mode === 'arrange' ? 'Im Raster anordnen' : p.layout === 'grid' ? 'Im Raster kopieren' : 'Zufällig verteilen', { selection: r.selection });
+}
+
+export function cancelGrid() {
+  const g = gridBase;
+  gridBase = null;
+  st().set(g ? { svg: g.svg, selection: g.selection, gridMode: null } : { gridMode: null });
 }
 
 // ---------- structure ----------

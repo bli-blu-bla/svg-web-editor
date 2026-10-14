@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
   AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, FlipHorizontal2, FlipVertical2, RotateCcw, RotateCw,
-  Lock, Unlock, Maximize2, Copy, Trash2, Group, Ungroup, BringToFront, SendToBack, ArrowUp, ArrowDown, Ban, Plus, X, Scissors, ArrowLeftRight,
+  Lock, Unlock, Maximize2, Copy, Trash2, Group, Ungroup, BringToFront, SendToBack, ArrowUp, ArrowDown, Ban, Plus, X, Scissors, ArrowLeftRight, LayoutGrid, Dices,
 } from 'lucide-react';
 import { nodeBaseOf, selectedNodes, useStore } from '../store';
 import { SHAPE_LABELS } from '../lib/shapes';
@@ -147,6 +147,10 @@ export function DesignTab() {
             <IconBtn title="Gruppierung aufheben (⇧⌘G)" icon={<Ungroup size={15} />} onClick={A.ungroupSelection} />
             <IconBtn title="Duplizieren (⌘D)" icon={<Copy size={15} />} onClick={A.duplicateSelection} />
             <IconBtn title="Löschen (⌫)" icon={<Trash2 size={15} />} onClick={A.deleteSelection} />
+          </div>
+          <div className="grid2">
+            <button className="btn" disabled={selection.length < 2} title="Ausgewählte Elemente in Zellen verteilen, z. B. 2 × 2 Icons auf einem Hintergrund" onClick={() => A.openGrid('arrange')}><LayoutGrid size={15} /> Raster …</button>
+            <button className="btn" title="Auswahl geordnet oder zufällig vervielfältigen" onClick={() => A.openGrid('copy')}><Dices size={15} /> Kopieren …</button>
           </div>
         </Section>
       )}

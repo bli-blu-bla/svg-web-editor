@@ -80,6 +80,8 @@ interface State {
   helpOpen: boolean;
   /** SVG code shown in the paste dialog (null = closed) */
   pasteSvg: string | null;
+  /** open grid panel: arrange the selection into cells, or copy it into a grid / scatter it */
+  gridMode: 'arrange' | 'copy' | null;
   /** id and name of the open document in the recent list */
   docId: string;
   docName: string;
@@ -239,6 +241,7 @@ export const useStore = create<State>((set, get) => ({
   paletteOpen: false,
   helpOpen: false,
   pasteSvg: null,
+  gridMode: null,
   docId: initialId,
   docName: initialName,
   recent: initialRecent,

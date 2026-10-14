@@ -104,6 +104,8 @@ export function commands(): Command[] {
     { id: 'align-bottom', group: 'Anordnen', label: 'Unten ausrichten', when: sel, run: () => A.align('bottom', !multi()) },
     { id: 'dist-h', group: 'Anordnen', label: 'Horizontal verteilen', when: () => st().selection.length > 2, run: () => A.distribute('h') },
     { id: 'dist-v', group: 'Anordnen', label: 'Vertikal verteilen', when: () => st().selection.length > 2, run: () => A.distribute('v') },
+    { id: 'grid-arrange', group: 'Anordnen', label: 'Im Raster anordnen …', terms: 'grid 2x2 zellen kacheln icons verteilen hintergrund', when: multi, run: () => A.openGrid('arrange') },
+    { id: 'grid-copy', group: 'Anordnen', label: 'Im Raster kopieren / zufällig verteilen …', terms: 'grid muster pattern vervielfältigen duplizieren streuen scatter random', when: sel, run: () => A.openGrid('copy') },
     { id: 'flip-h', group: 'Anordnen', label: 'Horizontal spiegeln', when: sel, run: () => A.flip('h') },
     { id: 'flip-v', group: 'Anordnen', label: 'Vertikal spiegeln', when: sel, run: () => A.flip('v') },
     { id: 'rot-cw', group: 'Anordnen', label: '90° im Uhrzeigersinn drehen', when: sel, run: () => A.rotateSelection(90) },

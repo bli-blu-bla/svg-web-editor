@@ -10,6 +10,7 @@ import { ToolRail } from './components/ToolRail';
 import { StatusBar } from './components/StatusBar';
 import { CommandPalette } from './components/CommandPalette';
 import { PasteDialog } from './components/PasteDialog';
+import { GridPanel } from './components/GridPanel';
 import { IconBtn, usePopover } from './components/ui';
 import { RecentMenu } from './components/RecentMenu';
 import { getEl, parseSvg, SHAPES, tryParse } from './lib/svg';
@@ -24,7 +25,7 @@ function useShortcuts() {
       const k = e.key.toLowerCase();
       const stop = () => e.preventDefault();
       if (mod && k === 'k') { stop(); s.set({ paletteOpen: !s.paletteOpen }); return; }
-      if (s.paletteOpen || s.pasteSvg !== null) return;
+      if (s.paletteOpen || s.pasteSvg !== null || s.gridMode) return;
       if (mod && k === 'z') { stop(); if (e.shiftKey) s.redo(); else s.undo(); }
       else if (mod && k === 'y') { stop(); s.redo(); }
       else if (mod && k === 'a') { stop(); A.selectAll(); }
@@ -228,6 +229,7 @@ export default function App() {
       <CommandPalette />
       <Shortcuts />
       <PasteDialog />
+      <GridPanel />
     </div>
   );
 }
